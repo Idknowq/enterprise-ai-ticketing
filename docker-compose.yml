@@ -1,0 +1,189 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-postgres
+    environment:
+      POSTGRES_DB: ${APP_DB_NAME:-ticketing}
+      POSTGRES_USER: ${APP_DB_USERNAME:-ticketing}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-ticketing}
+    ports:
+      - "${APP_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${APP_DB_USERNAME:-ticketing} -d ${APP_DB_NAME:-ticketing}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ticketing-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${APP_REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ticketing-net
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.5
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-qdrant
+    ports:
+      - "${APP_QDRANT_HTTP_PORT:-6333}:6333"
+      - "${APP_QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - ticketing-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${APP_RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${APP_RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${APP_RABBITMQ_PORT:-5672}:5672"
+      - "${APP_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - ticketing-net
+
+  temporal-postgresql:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-temporal-postgresql
+    environment:
+      POSTGRES_DB: ${TEMPORAL_POSTGRES_DB:-temporal}
+      POSTGRES_USER: ${TEMPORAL_POSTGRES_USER:-temporal}
+      POSTGRES_PASSWORD: ${TEMPORAL_POSTGRES_PASSWORD:-temporal}
+    ports:
+      - "${TEMPORAL_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPORAL_POSTGRES_USER:-temporal} -d ${TEMPORAL_POSTGRES_DB:-temporal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ticketing-net
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-temporal
+    depends_on:
+      temporal-postgresql:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_SEEDS: temporal-postgresql
+      POSTGRES_USER: ${TEMPORAL_POSTGRES_USER:-temporal}
+      POSTGRES_PWD: ${TEMPORAL_POSTGRES_PASSWORD:-temporal}
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports:
+      - "${APP_TEMPORAL_PORT:-7233}:7233"
+    volumes:
+      - ./infra/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    networks:
+      - ticketing-net
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-temporal-ui
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "${APP_TEMPORAL_UI_PORT:-8088}:8080"
+    networks:
+      - ticketing-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.59
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_OTLP_GRPC_HOST_PORT: 0.0.0.0:4317
+      COLLECTOR_OTLP_HTTP_HOST_PORT: 0.0.0.0:4318
+    ports:
+      - "${APP_JAEGER_UI_PORT:-16686}:16686"
+    networks:
+      - ticketing-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    depends_on:
+      - jaeger
+    volumes:
+      - ./infra/otel/otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "${APP_OTEL_COLLECTOR_GRPC_PORT:-4317}:4317"
+      - "${APP_OTEL_COLLECTOR_HTTP_PORT:-4318}:4318"
+      - "8889:8889"
+    networks:
+      - ticketing-net
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-prometheus
+    depends_on:
+      - otel-collector
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${APP_PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - ticketing-net
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: ${COMPOSE_PROJECT_NAME:-enterprise-ai-ticketing}-grafana
+    depends_on:
+      - prometheus
+      - jaeger
+    environment:
+      GF_SECURITY_ADMIN_USER: ${APP_GRAFANA_USERNAME:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${APP_GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${APP_GRAFANA_PORT:-3001}:3000"
+    networks:
+      - ticketing-net
+
+volumes:
+  postgres-data:
+  redis-data:
+  qdrant-data:
+  rabbitmq-data:
+  temporal-postgres-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  ticketing-net:
+    driver: bridge
