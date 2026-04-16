@@ -1,6 +1,8 @@
 package com.enterprise.ticketing.config;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -11,6 +13,7 @@ public class ApplicationProperties {
     @NotBlank
     private String apiBasePath = "/api";
 
+    private final Auth auth = new Auth();
     private final Qdrant qdrant = new Qdrant();
     private final Temporal temporal = new Temporal();
     private final Observability observability = new Observability();
@@ -28,6 +31,10 @@ public class ApplicationProperties {
         return qdrant;
     }
 
+    public Auth getAuth() {
+        return auth;
+    }
+
     public Temporal getTemporal() {
         return temporal;
     }
@@ -38,6 +45,49 @@ public class ApplicationProperties {
 
     public Modules getModules() {
         return modules;
+    }
+
+    public static class Auth {
+        private final Jwt jwt = new Jwt();
+
+        public Jwt getJwt() {
+            return jwt;
+        }
+
+        public static class Jwt {
+            @NotBlank
+            private String issuer = "enterprise-ai-ticketing";
+
+            @NotBlank
+            private String secret = "change-this-dev-secret-to-at-least-32-chars";
+
+            @NotNull
+            private Duration accessTokenTtl = Duration.ofHours(8);
+
+            public String getIssuer() {
+                return issuer;
+            }
+
+            public void setIssuer(String issuer) {
+                this.issuer = issuer;
+            }
+
+            public String getSecret() {
+                return secret;
+            }
+
+            public void setSecret(String secret) {
+                this.secret = secret;
+            }
+
+            public Duration getAccessTokenTtl() {
+                return accessTokenTtl;
+            }
+
+            public void setAccessTokenTtl(Duration accessTokenTtl) {
+                this.accessTokenTtl = accessTokenTtl;
+            }
+        }
     }
 
     public static class Qdrant {
@@ -223,4 +273,3 @@ public class ApplicationProperties {
         }
     }
 }
-

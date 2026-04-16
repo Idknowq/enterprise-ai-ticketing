@@ -12,7 +12,11 @@ public enum ErrorCode {
     COMMON_CONFLICT("COMMON_CONFLICT", HttpStatus.CONFLICT, "Conflict"),
     COMMON_NOT_IMPLEMENTED("COMMON_NOT_IMPLEMENTED", HttpStatus.NOT_IMPLEMENTED, "Capability not implemented"),
     COMMON_INTERNAL_ERROR("COMMON_INTERNAL_ERROR", HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error"),
-    COMMON_SERVICE_UNAVAILABLE("COMMON_SERVICE_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE, "Service unavailable");
+    COMMON_SERVICE_UNAVAILABLE("COMMON_SERVICE_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE, "Service unavailable"),
+    AUTH_INVALID_CREDENTIALS("AUTH_INVALID_CREDENTIALS", HttpStatus.UNAUTHORIZED, "Invalid credentials"),
+    AUTH_USER_DISABLED("AUTH_USER_DISABLED", HttpStatus.FORBIDDEN, "User is disabled"),
+    AUTH_INVALID_TOKEN("AUTH_INVALID_TOKEN", HttpStatus.UNAUTHORIZED, "Invalid JWT token"),
+    AUTH_TOKEN_EXPIRED("AUTH_TOKEN_EXPIRED", HttpStatus.UNAUTHORIZED, "JWT token has expired");
 
     private final String code;
     private final HttpStatus status;
@@ -36,4 +40,3 @@ public enum ErrorCode {
         return defaultMessage;
     }
 }
-

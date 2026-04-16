@@ -70,6 +70,11 @@ springdoc:
 
 app:
   api-base-path: /api
+  auth:
+    jwt:
+      issuer: ${APP_AUTH_JWT_ISSUER:enterprise-ai-ticketing}
+      secret: ${APP_AUTH_JWT_SECRET:change-this-dev-secret-to-at-least-32-chars}
+      access-token-ttl: ${APP_AUTH_JWT_ACCESS_TOKEN_TTL:8h}
   qdrant:
     host: ${APP_QDRANT_HOST:localhost}
     http-port: ${APP_QDRANT_HTTP_PORT:6333}
