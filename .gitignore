@@ -5,6 +5,10 @@
 *.log
 
 backend/target/
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+.vscode/
 
 infra/**/data/
 infra/**/.DS_Store

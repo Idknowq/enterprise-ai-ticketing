@@ -136,6 +136,12 @@ public class TicketCoreServiceImpl
 
     @Override
     @Transactional
+    public TicketResponse markInProgress(Long ticketId, String summary) {
+        return updateStatusAsSystem(ticketId, TicketStatus.IN_PROGRESS, summary, "WORKFLOW");
+    }
+
+    @Override
+    @Transactional
     public TicketResponse markResolved(Long ticketId, String summary) {
         return updateStatusAsSystem(ticketId, TicketStatus.RESOLVED, summary, "WORKFLOW");
     }
@@ -261,6 +267,9 @@ public class TicketCoreServiceImpl
 
     private TicketResponse updateStatusAsSystem(Long ticketId, TicketStatus targetStatus, String summary, String source) {
         TicketEntity ticket = requireTicket(ticketId);
+        if (ticket.getStatus() == targetStatus) {
+            return ticketDtoMapper.toTicketResponse(ticket);
+        }
         TicketStatus fromStatus = ticket.getStatus();
         ticket.transitionTo(targetStatus);
         TicketEntity savedTicket = ticketRepository.saveAndFlush(ticket);

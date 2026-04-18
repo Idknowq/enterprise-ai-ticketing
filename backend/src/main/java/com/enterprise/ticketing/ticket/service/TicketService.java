@@ -14,6 +14,8 @@ public interface TicketService {
 
     TicketResponse markWaitingApproval(Long ticketId, String summary);
 
+    TicketResponse markInProgress(Long ticketId, String summary);
+
     TicketResponse markResolved(Long ticketId, String summary);
 
     TicketResponse markRejected(Long ticketId, String summary);

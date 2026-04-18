@@ -16,6 +16,7 @@ import com.enterprise.ticketing.ai.workflow.TicketRetrieverNode;
 import com.enterprise.ticketing.common.error.ErrorCode;
 import com.enterprise.ticketing.common.exception.BusinessException;
 import com.enterprise.ticketing.config.ApplicationProperties;
+import com.enterprise.ticketing.observability.service.TelemetryService;
 import com.enterprise.ticketing.ticket.dto.TicketDetailResponse;
 import com.enterprise.ticketing.ticket.service.TicketQueryService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -43,6 +44,7 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
     private final AiRunLogService aiRunLogService;
     private final AiRunRepository aiRunRepository;
     private final ObjectMapper objectMapper;
+    private final TelemetryService telemetryService;
 
     public DefaultAiOrchestrationService(
             ApplicationProperties applicationProperties,
@@ -53,7 +55,8 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
             TicketResolutionNode ticketResolutionNode,
             AiRunLogService aiRunLogService,
             AiRunRepository aiRunRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            TelemetryService telemetryService
     ) {
         this.applicationProperties = applicationProperties;
         this.ticketQueryService = ticketQueryService;
@@ -64,52 +67,17 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
         this.aiRunLogService = aiRunLogService;
         this.aiRunRepository = aiRunRepository;
         this.objectMapper = objectMapper;
+        this.telemetryService = telemetryService;
     }
 
     @Override
     public AiDecisionResult runForTicket(Long ticketId) {
         ensureEnabled();
-        TicketDetailResponse ticketDetail = ticketQueryService.getTicketDetail(ticketId);
-        String workflowId = workflowId();
-        AiWorkflowState state = new AiWorkflowState(workflowId, ticketDetail.ticket());
-
-        try {
-            ticketClassifierNode.execute(state);
-            ticketExtractorNode.execute(state);
-            ticketRetrieverNode.execute(state);
-            ticketResolutionNode.execute(state);
-
-            AiDecisionResult decisionResult = buildDecisionResult(state);
-            aiRunLogService.recordSuccess(
-                    ticketId,
-                    workflowId,
-                    AiNodeName.ORCHESTRATION,
-                    "ai-orchestration-service",
-                    0,
-                    0,
-                    0,
-                    "AI orchestration completed",
-                    decisionResult
-            );
-            return decisionResult;
-        } catch (RuntimeException exception) {
-            aiRunLogService.recordFailure(
-                    ticketId,
-                    workflowId,
-                    AiNodeName.ORCHESTRATION,
-                    "ai-orchestration-service",
-                    0,
-                    exception.getMessage(),
-                    Map.of("ticketId", ticketId)
-            );
-            if (exception instanceof BusinessException businessException) {
-                throw businessException;
-            }
-            throw new BusinessException(
-                    ErrorCode.COMMON_INTERNAL_ERROR,
-                    "AI orchestration failed for ticket " + ticketId + ": " + exception.getMessage()
-            );
-        }
+        return telemetryService.inSpan(
+                "ticketing.ai.orchestration",
+                Map.of("ticket.id", String.valueOf(ticketId)),
+                () -> executeRun(ticketId)
+        );
     }
 
     @Override
@@ -188,6 +156,59 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
         if (!applicationProperties.getAi().isEnabled()) {
             throw new BusinessException(ErrorCode.COMMON_SERVICE_UNAVAILABLE, "AI orchestration module is disabled");
         }
+    }
+
+    private AiDecisionResult executeRun(Long ticketId) {
+        long startedAt = System.nanoTime();
+        TicketDetailResponse ticketDetail = ticketQueryService.getTicketDetail(ticketId);
+        String workflowId = workflowId();
+        AiWorkflowState state = new AiWorkflowState(workflowId, ticketDetail.ticket());
+
+        try {
+            ticketClassifierNode.execute(state);
+            ticketExtractorNode.execute(state);
+            ticketRetrieverNode.execute(state);
+            ticketResolutionNode.execute(state);
+
+            AiDecisionResult decisionResult = buildDecisionResult(state);
+            int latencyMs = latencyMs(startedAt);
+            aiRunLogService.recordSuccess(
+                    ticketId,
+                    workflowId,
+                    AiNodeName.ORCHESTRATION,
+                    "ai-orchestration-service",
+                    latencyMs,
+                    0,
+                    0,
+                    "AI orchestration completed",
+                    decisionResult
+            );
+            telemetryService.recordAiOrchestrationResult(true, latencyMs);
+            return decisionResult;
+        } catch (RuntimeException exception) {
+            int latencyMs = latencyMs(startedAt);
+            aiRunLogService.recordFailure(
+                    ticketId,
+                    workflowId,
+                    AiNodeName.ORCHESTRATION,
+                    "ai-orchestration-service",
+                    latencyMs,
+                    exception.getMessage(),
+                    Map.of("ticketId", ticketId)
+            );
+            telemetryService.recordAiOrchestrationResult(false, latencyMs);
+            if (exception instanceof BusinessException businessException) {
+                throw businessException;
+            }
+            throw new BusinessException(
+                    ErrorCode.COMMON_INTERNAL_ERROR,
+                    "AI orchestration failed for ticket " + ticketId + ": " + exception.getMessage()
+            );
+        }
+    }
+
+    private int latencyMs(long startedAt) {
+        return (int) java.time.Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
     }
 
     private String workflowId() {
