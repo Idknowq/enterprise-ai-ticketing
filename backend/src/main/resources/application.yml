@@ -8,7 +8,7 @@ spring:
   profiles:
     default: dev
   datasource:
-    url: jdbc:postgresql://${APP_DB_HOST:localhost}:${APP_DB_PORT:5432}/${APP_DB_NAME:ticketing}
+    url: jdbc:postgresql://${APP_DB_HOST:127.0.0.1}:${APP_DB_PORT:5432}/${APP_DB_NAME:ticketing}
     username: ${APP_DB_USERNAME:ticketing}
     password: ${APP_DB_PASSWORD:ticketing}
     driver-class-name: org.postgresql.Driver
@@ -22,10 +22,10 @@ spring:
           time_zone: UTC
   data:
     redis:
-      host: ${APP_REDIS_HOST:localhost}
+      host: ${APP_REDIS_HOST:127.0.0.1}
       port: ${APP_REDIS_PORT:6379}
   rabbitmq:
-    host: ${APP_RABBITMQ_HOST:localhost}
+    host: ${APP_RABBITMQ_HOST:127.0.0.1}
     port: ${APP_RABBITMQ_PORT:5672}
     username: ${APP_RABBITMQ_USERNAME:guest}
     password: ${APP_RABBITMQ_PASSWORD:guest}
@@ -50,7 +50,7 @@ management:
       probability: 1.0
   otlp:
     tracing:
-      endpoint: ${APP_OTEL_EXPORTER_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+      endpoint: ${APP_OTEL_EXPORTER_TRACES_ENDPOINT:http://127.0.0.1:4318/v1/traces}
   prometheus:
     metrics:
       export:
@@ -75,13 +75,34 @@ app:
       issuer: ${APP_AUTH_JWT_ISSUER:enterprise-ai-ticketing}
       secret: ${APP_AUTH_JWT_SECRET:change-this-dev-secret-to-at-least-32-chars}
       access-token-ttl: ${APP_AUTH_JWT_ACCESS_TOKEN_TTL:8h}
+  ai:
+    enabled: ${APP_AI_ENABLED:true}
+    retrieval-top-k: ${APP_AI_RETRIEVAL_TOP_K:4}
+    provider:
+      type: ${APP_AI_PROVIDER_TYPE:rule-based}
+      model: ${APP_AI_PROVIDER_MODEL:mvp-rule-based}
+      base-url: ${APP_AI_PROVIDER_BASE_URL:}
+      api-key: ${APP_AI_PROVIDER_API_KEY:}
+      chat-path: ${APP_AI_PROVIDER_CHAT_PATH:/v1/chat/completions}
+      timeout: ${APP_AI_PROVIDER_TIMEOUT:20s}
   qdrant:
-    host: ${APP_QDRANT_HOST:localhost}
+    host: ${APP_QDRANT_HOST:127.0.0.1}
     http-port: ${APP_QDRANT_HTTP_PORT:6333}
     grpc-port: ${APP_QDRANT_GRPC_PORT:6334}
     api-key: ${APP_QDRANT_API_KEY:}
+  knowledge:
+    collection-name: ${APP_KNOWLEDGE_COLLECTION_NAME:knowledge_chunks}
+    embedding-dimension: ${APP_KNOWLEDGE_EMBEDDING_DIMENSION:256}
+    chunk-size: ${APP_KNOWLEDGE_CHUNK_SIZE:800}
+    chunk-overlap: ${APP_KNOWLEDGE_CHUNK_OVERLAP:120}
+    default-top-k: ${APP_KNOWLEDGE_DEFAULT_TOP_K:5}
+    max-top-k: ${APP_KNOWLEDGE_MAX_TOP_K:10}
+    global-department: ${APP_KNOWLEDGE_GLOBAL_DEPARTMENT:GLOBAL}
+    embedding:
+      provider: ${APP_KNOWLEDGE_EMBEDDING_PROVIDER:hashing}
+      model: ${APP_KNOWLEDGE_EMBEDDING_MODEL:hashing-v1}
   temporal:
-    host: ${APP_TEMPORAL_HOST:localhost}
+    host: ${APP_TEMPORAL_HOST:127.0.0.1}
     port: ${APP_TEMPORAL_PORT:7233}
     namespace: ${APP_TEMPORAL_NAMESPACE:default}
     task-queue: ticketing-mvp-task-queue

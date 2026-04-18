@@ -16,7 +16,11 @@ public enum ErrorCode {
     AUTH_INVALID_CREDENTIALS("AUTH_INVALID_CREDENTIALS", HttpStatus.UNAUTHORIZED, "Invalid credentials"),
     AUTH_USER_DISABLED("AUTH_USER_DISABLED", HttpStatus.FORBIDDEN, "User is disabled"),
     AUTH_INVALID_TOKEN("AUTH_INVALID_TOKEN", HttpStatus.UNAUTHORIZED, "Invalid JWT token"),
-    AUTH_TOKEN_EXPIRED("AUTH_TOKEN_EXPIRED", HttpStatus.UNAUTHORIZED, "JWT token has expired");
+    AUTH_TOKEN_EXPIRED("AUTH_TOKEN_EXPIRED", HttpStatus.UNAUTHORIZED, "JWT token has expired"),
+    KNOWLEDGE_UNSUPPORTED_FILE("KNOWLEDGE_UNSUPPORTED_FILE", HttpStatus.BAD_REQUEST, "Unsupported knowledge file"),
+    KNOWLEDGE_DOCUMENT_PROCESSING_FAILED("KNOWLEDGE_DOCUMENT_PROCESSING_FAILED", HttpStatus.BAD_REQUEST, "Failed to process knowledge document"),
+    KNOWLEDGE_RETRIEVAL_FAILED("KNOWLEDGE_RETRIEVAL_FAILED", HttpStatus.SERVICE_UNAVAILABLE, "Knowledge retrieval failed"),
+    KNOWLEDGE_VECTOR_STORE_UNAVAILABLE("KNOWLEDGE_VECTOR_STORE_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE, "Knowledge vector store unavailable");
 
     private final String code;
     private final HttpStatus status;

@@ -14,7 +14,9 @@ public class ApplicationProperties {
     private String apiBasePath = "/api";
 
     private final Auth auth = new Auth();
+    private final Ai ai = new Ai();
     private final Qdrant qdrant = new Qdrant();
+    private final Knowledge knowledge = new Knowledge();
     private final Temporal temporal = new Temporal();
     private final Observability observability = new Observability();
     private final Modules modules = new Modules();
@@ -33,6 +35,14 @@ public class ApplicationProperties {
 
     public Auth getAuth() {
         return auth;
+    }
+
+    public Ai getAi() {
+        return ai;
+    }
+
+    public Knowledge getKnowledge() {
+        return knowledge;
     }
 
     public Temporal getTemporal() {
@@ -90,6 +100,95 @@ public class ApplicationProperties {
         }
     }
 
+    public static class Ai {
+        private boolean enabled = true;
+        private int retrievalTopK = 4;
+        private final Provider provider = new Provider();
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getRetrievalTopK() {
+            return retrievalTopK;
+        }
+
+        public void setRetrievalTopK(int retrievalTopK) {
+            this.retrievalTopK = retrievalTopK;
+        }
+
+        public Provider getProvider() {
+            return provider;
+        }
+
+        public static class Provider {
+            @NotBlank
+            private String type = "rule-based";
+
+            @NotBlank
+            private String model = "mvp-rule-based";
+
+            private String baseUrl;
+            private String apiKey;
+            private String chatPath = "/v1/chat/completions";
+
+            @NotNull
+            private Duration timeout = Duration.ofSeconds(20);
+
+            public String getType() {
+                return type;
+            }
+
+            public void setType(String type) {
+                this.type = type;
+            }
+
+            public String getModel() {
+                return model;
+            }
+
+            public void setModel(String model) {
+                this.model = model;
+            }
+
+            public String getBaseUrl() {
+                return baseUrl;
+            }
+
+            public void setBaseUrl(String baseUrl) {
+                this.baseUrl = baseUrl;
+            }
+
+            public String getApiKey() {
+                return apiKey;
+            }
+
+            public void setApiKey(String apiKey) {
+                this.apiKey = apiKey;
+            }
+
+            public String getChatPath() {
+                return chatPath;
+            }
+
+            public void setChatPath(String chatPath) {
+                this.chatPath = chatPath;
+            }
+
+            public Duration getTimeout() {
+                return timeout;
+            }
+
+            public void setTimeout(Duration timeout) {
+                this.timeout = timeout;
+            }
+        }
+    }
+
     public static class Qdrant {
         private String host = "localhost";
         private int httpPort = 6333;
@@ -126,6 +225,98 @@ public class ApplicationProperties {
 
         public void setApiKey(String apiKey) {
             this.apiKey = apiKey;
+        }
+    }
+
+    public static class Knowledge {
+        private String collectionName = "knowledge_chunks";
+        private int embeddingDimension = 256;
+        private int chunkSize = 800;
+        private int chunkOverlap = 120;
+        private int defaultTopK = 5;
+        private int maxTopK = 10;
+        private String globalDepartment = "GLOBAL";
+        private final Embedding embedding = new Embedding();
+
+        public String getCollectionName() {
+            return collectionName;
+        }
+
+        public void setCollectionName(String collectionName) {
+            this.collectionName = collectionName;
+        }
+
+        public int getEmbeddingDimension() {
+            return embeddingDimension;
+        }
+
+        public void setEmbeddingDimension(int embeddingDimension) {
+            this.embeddingDimension = embeddingDimension;
+        }
+
+        public int getChunkSize() {
+            return chunkSize;
+        }
+
+        public void setChunkSize(int chunkSize) {
+            this.chunkSize = chunkSize;
+        }
+
+        public int getChunkOverlap() {
+            return chunkOverlap;
+        }
+
+        public void setChunkOverlap(int chunkOverlap) {
+            this.chunkOverlap = chunkOverlap;
+        }
+
+        public int getDefaultTopK() {
+            return defaultTopK;
+        }
+
+        public void setDefaultTopK(int defaultTopK) {
+            this.defaultTopK = defaultTopK;
+        }
+
+        public int getMaxTopK() {
+            return maxTopK;
+        }
+
+        public void setMaxTopK(int maxTopK) {
+            this.maxTopK = maxTopK;
+        }
+
+        public String getGlobalDepartment() {
+            return globalDepartment;
+        }
+
+        public void setGlobalDepartment(String globalDepartment) {
+            this.globalDepartment = globalDepartment;
+        }
+
+        public Embedding getEmbedding() {
+            return embedding;
+        }
+
+        public static class Embedding {
+            private String provider = "hashing";
+            private String model = "hashing-v1";
+
+            public String getProvider() {
+                return provider;
+            }
+
+            public void setProvider(String provider) {
+                this.provider = provider;
+            }
+
+            public String getModel() {
+                return model;
+            }
+
+            public void setModel(String model) {
+                this.model = model;
+            }
         }
     }
 

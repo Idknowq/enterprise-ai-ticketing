@@ -1,6 +1,4 @@
 /**
- * Knowledge and retrieval module.
- * Reserved for Thread 4.
+ * Knowledge ingestion, vector indexing, retrieval, and citation persistence.
  */
 package com.enterprise.ticketing.knowledge;
-
