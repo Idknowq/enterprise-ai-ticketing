@@ -8,7 +8,7 @@ import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons"
 import { App, Button, Card, Drawer, Form, Input, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatDateTime } from "@/lib/date";
 import { useRouter } from "next/navigation";
 
@@ -31,7 +31,7 @@ export default function TicketsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadTickets(nextFilters = filters) {
+  const loadTickets = useCallback(async (nextFilters = filters) => {
     setLoading(true);
     setError(null);
     try {
@@ -42,19 +42,24 @@ export default function TicketsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [filters]);
 
   useEffect(() => {
     loadTickets(filters);
-  }, [filters]);
+  }, [filters, loadTickets]);
+
+  function closeCreateDrawer() {
+    createForm.resetFields();
+    setDrawerOpen(false);
+  }
 
   async function handleCreate(values: CreateTicketRequest) {
     setCreateLoading(true);
     try {
       const ticket = await createTicket(values);
       message.success("工单创建成功");
-      setDrawerOpen(false);
       createForm.resetFields();
+      setDrawerOpen(false);
       await loadTickets({ ...filters, page: 0 });
       router.push(`/tickets/${ticket.id}`);
     } catch (createError) {
@@ -226,7 +231,7 @@ export default function TicketsPage() {
         title="新建工单"
         open={drawerOpen}
         width={520}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeCreateDrawer}
         destroyOnClose
       >
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
@@ -261,7 +266,7 @@ export default function TicketsPage() {
             </Select>
           </Form.Item>
           <Space>
-            <Button onClick={() => setDrawerOpen(false)}>取消</Button>
+            <Button onClick={closeCreateDrawer}>取消</Button>
             <Button type="primary" htmlType="submit" loading={createLoading}>
               提交工单
             </Button>

@@ -1,10 +1,14 @@
 package com.enterprise.ticketing.common.controller;
 
+import com.enterprise.ticketing.common.api.OpenApiResultSchemas;
 import com.enterprise.ticketing.common.api.Result;
 import com.enterprise.ticketing.common.dto.PlatformInfoResponse;
 import com.enterprise.ticketing.common.util.TraceIdUtils;
 import com.enterprise.ticketing.config.ApplicationProperties;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -26,6 +30,7 @@ public class PlatformController {
     }
 
     @Operation(summary = "Platform info", description = "Returns project-level foundation metadata for smoke checks.")
+    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = OpenApiResultSchemas.PlatformInfoResult.class)))
     @GetMapping("${app.api-base-path:/api}/platform/info")
     public Result<PlatformInfoResponse> info() {
         Map<String, Boolean> modules = new LinkedHashMap<>();
@@ -47,4 +52,3 @@ public class PlatformController {
         return Result.success(data, TraceIdUtils.currentTraceId());
     }
 }
-

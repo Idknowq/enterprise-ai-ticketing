@@ -1,0 +1,2 @@
+VPN access requests must include business justification, environment scope, and an expiry date.
+Production read-only log access requires manager approval and must be reviewed every 7 days.

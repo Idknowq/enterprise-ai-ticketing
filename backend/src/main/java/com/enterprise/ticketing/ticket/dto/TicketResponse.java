@@ -10,10 +10,12 @@ public record TicketResponse(
         Long id,
         String title,
         String description,
+        @Schema(nullable = true)
         String category,
         TicketPriority priority,
         TicketStatus status,
         TicketUserSummaryResponse requester,
+        @Schema(nullable = true)
         TicketUserSummaryResponse assignee,
         Instant createdAt,
         Instant updatedAt

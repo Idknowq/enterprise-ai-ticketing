@@ -15,6 +15,7 @@ public record DocumentResponse(
         int chunkCount,
         String embeddingModel,
         DocumentMetadataResponse metadata,
+        @Schema(nullable = true)
         Instant lastIndexedAt,
         Instant createdAt
 ) {

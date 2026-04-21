@@ -6,9 +6,13 @@ import com.enterprise.ticketing.approval.dto.ApprovalStageResponse;
 import com.enterprise.ticketing.approval.dto.PendingApprovalResponse;
 import com.enterprise.ticketing.approval.service.ApprovalCommandService;
 import com.enterprise.ticketing.approval.service.ApprovalQueryService;
+import com.enterprise.ticketing.common.api.OpenApiResultSchemas;
 import com.enterprise.ticketing.common.api.Result;
 import com.enterprise.ticketing.common.util.TraceIdUtils;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -36,6 +40,7 @@ public class ApprovalController {
     }
 
     @Operation(summary = "List pending approvals", description = "Return pending approvals for the current approver. Admin can view all.")
+    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = OpenApiResultSchemas.PendingApprovalListResult.class)))
     @GetMapping("/pending")
     public Result<List<PendingApprovalResponse>> pending() {
         return Result.success(approvalQueryService.listPendingApprovals(), TraceIdUtils.currentTraceId());

@@ -40,7 +40,7 @@ import {
 } from "antd";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 function sortRuns(runs: AiWorkflowRunResponse[]) {
   return [...runs].sort(
@@ -54,8 +54,6 @@ export default function TicketDetailPage() {
   const params = useParams<{ id: string }>();
   const ticketId = Number(params.id);
   const [commentForm] = Form.useForm<{ content: string }>();
-  const [statusForm] = Form.useForm<{ status: TicketStatus; reason?: string }>();
-  const [assignForm] = Form.useForm<{ assigneeId: number; note?: string }>();
   const [detail, setDetail] = useState<TicketDetailResponse | null>(null);
   const [aiRuns, setAiRuns] = useState<AiWorkflowRunResponse[]>([]);
   const [approvalStages, setApprovalStages] = useState<ApprovalStageResponse[]>([]);
@@ -73,7 +71,7 @@ export default function TicketDetailPage() {
     user?.roles.includes("SUPPORT_AGENT") || user?.roles.includes("ADMIN"),
   );
 
-  async function loadPage() {
+  const loadPage = useCallback(async () => {
     setLoading(true);
     setError(null);
     setAiError(null);
@@ -100,19 +98,13 @@ export default function TicketDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [ticketId]);
 
   useEffect(() => {
     if (!Number.isNaN(ticketId)) {
       loadPage();
     }
-  }, [ticketId]);
-
-  useEffect(() => {
-    if (detail) {
-      statusForm.setFieldsValue({ status: detail.ticket.status });
-    }
-  }, [detail, statusForm]);
+  }, [ticketId, loadPage]);
 
   async function handleComment(values: { content: string }) {
     setCommentLoading(true);
@@ -133,7 +125,6 @@ export default function TicketDetailPage() {
     try {
       await updateTicketStatus(ticketId, values);
       message.success("状态已更新");
-      statusForm.resetFields();
       await loadPage();
     } catch (submitError) {
       message.error(submitError instanceof Error ? submitError.message : "状态更新失败");
@@ -150,7 +141,6 @@ export default function TicketDetailPage() {
         note: values.note,
       });
       message.success("工单已指派");
-      assignForm.resetFields();
       await loadPage();
     } catch (submitError) {
       message.error(submitError instanceof Error ? submitError.message : "指派失败");
@@ -549,7 +539,7 @@ export default function TicketDetailPage() {
               {canManageTicket ? (
                 <>
                   <Form
-                    form={statusForm}
+                    key={`status-${detail.ticket.id}-${detail.ticket.status}`}
                     layout="vertical"
                     onFinish={handleStatus}
                     initialValues={{ status: detail.ticket.status }}
@@ -573,7 +563,7 @@ export default function TicketDetailPage() {
 
                   <Divider style={{ margin: 0 }} />
 
-                  <Form form={assignForm} layout="vertical" onFinish={handleAssign}>
+                  <Form key={`assign-${detail.ticket.id}-${detail.ticket.assignee?.id ?? "none"}`} layout="vertical" onFinish={handleAssign}>
                     <Form.Item
                       label="指派处理人 ID"
                       name="assigneeId"

@@ -9,10 +9,12 @@ import java.time.Instant;
 public record TicketSummaryResponse(
         Long id,
         String title,
+        @Schema(nullable = true)
         String category,
         TicketPriority priority,
         TicketStatus status,
         TicketUserSummaryResponse requester,
+        @Schema(nullable = true)
         TicketUserSummaryResponse assignee,
         Instant createdAt,
         Instant updatedAt

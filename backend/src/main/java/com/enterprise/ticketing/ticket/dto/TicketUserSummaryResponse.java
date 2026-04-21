@@ -7,6 +7,7 @@ public record TicketUserSummaryResponse(
         Long id,
         String username,
         String displayName,
+        @Schema(nullable = true)
         String department
 ) {
 }

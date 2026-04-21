@@ -1,5 +1,6 @@
 package com.enterprise.ticketing.ticket.controller;
 
+import com.enterprise.ticketing.common.api.OpenApiResultSchemas;
 import com.enterprise.ticketing.common.api.Result;
 import com.enterprise.ticketing.common.util.TraceIdUtils;
 import com.enterprise.ticketing.ticket.dto.AppendTicketCommentRequest;
@@ -16,6 +17,9 @@ import com.enterprise.ticketing.ticket.service.TicketCommentService;
 import com.enterprise.ticketing.ticket.service.TicketQueryService;
 import com.enterprise.ticketing.ticket.service.TicketService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.validation.annotation.Validated;
@@ -57,6 +61,7 @@ public class TicketController {
     }
 
     @Operation(summary = "List tickets", description = "Query tickets with permission-aware filtering and pagination.")
+    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = OpenApiResultSchemas.TicketListResult.class)))
     @GetMapping
     public Result<TicketListResponse> listTickets(@Valid @ModelAttribute TicketListQuery query) {
         return Result.success(ticketQueryService.listTickets(query), TraceIdUtils.currentTraceId());

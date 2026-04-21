@@ -1,5 +1,6 @@
 package com.enterprise.ticketing.knowledge.controller;
 
+import com.enterprise.ticketing.common.api.OpenApiResultSchemas;
 import com.enterprise.ticketing.common.api.Result;
 import com.enterprise.ticketing.common.util.TraceIdUtils;
 import com.enterprise.ticketing.knowledge.dto.DocumentListQuery;
@@ -8,6 +9,9 @@ import com.enterprise.ticketing.knowledge.dto.DocumentResponse;
 import com.enterprise.ticketing.knowledge.dto.DocumentUploadRequest;
 import com.enterprise.ticketing.knowledge.service.DocumentService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -39,6 +43,7 @@ public class DocumentController {
     }
 
     @Operation(summary = "List documents", description = "List indexed knowledge documents with metadata filters.")
+    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = OpenApiResultSchemas.DocumentListResult.class)))
     @GetMapping
     @PreAuthorize("@roleChecker.hasAnyRole(authentication, 'ADMIN', 'SUPPORT_AGENT')")
     public Result<DocumentListResponse> listDocuments(@Valid @ModelAttribute DocumentListQuery query) {

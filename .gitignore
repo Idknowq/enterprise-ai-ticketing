@@ -8,6 +8,10 @@ backend/target/
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
+frontend/test-results/
+frontend/playwright-report/
+test-results/
+schemathesis-report/
 .vscode/
 
 infra/**/data/

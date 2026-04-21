@@ -32,7 +32,7 @@ import {
   Upload,
 } from "antd";
 import dayjs, { type Dayjs } from "dayjs";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function DocumentsPage() {
   const { message } = App.useApp();
@@ -52,7 +52,7 @@ export default function DocumentsPage() {
   const canAccess = Boolean(user?.roles.includes("SUPPORT_AGENT") || user?.roles.includes("ADMIN"));
   const canUpload = Boolean(user?.roles.includes("ADMIN"));
 
-  async function loadDocuments(nextFilters = filters) {
+  const loadDocuments = useCallback(async (nextFilters = filters) => {
     setLoading(true);
     setError(null);
     try {
@@ -63,7 +63,7 @@ export default function DocumentsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [filters]);
 
   useEffect(() => {
     if (canAccess) {
@@ -71,7 +71,7 @@ export default function DocumentsPage() {
     } else {
       setLoading(false);
     }
-  }, [canAccess, filters]);
+  }, [canAccess, filters, loadDocuments]);
 
   async function handleUpload(values: {
     title?: string;

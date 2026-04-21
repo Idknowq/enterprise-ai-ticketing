@@ -13,7 +13,7 @@ import type { PendingApprovalResponse } from "@/types/api";
 import { App, Alert, Button, Card, Form, Input, Modal, Result, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function ApprovalsPage() {
   const { message } = App.useApp();
@@ -29,7 +29,7 @@ export default function ApprovalsPage() {
 
   const canAccess = Boolean(user?.roles.includes("APPROVER") || user?.roles.includes("ADMIN"));
 
-  async function loadApprovals() {
+  const loadApprovals = useCallback(async () => {
     if (!user) {
       return;
     }
@@ -44,7 +44,7 @@ export default function ApprovalsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [user]);
 
   useEffect(() => {
     if (user && canAccess) {
@@ -52,7 +52,7 @@ export default function ApprovalsPage() {
     } else {
       setLoading(false);
     }
-  }, [user, canAccess]);
+  }, [user, canAccess, loadApprovals]);
 
   async function handleDecision(values: { comment?: string }) {
     if (!decisionTarget) {
@@ -106,7 +106,9 @@ export default function ApprovalsPage() {
       title: "工单",
       render: (_, record) => (
         <Space direction="vertical" size={2}>
-          <Link href={`/tickets/${record.ticketId}`}>{record.ticketTitle}</Link>
+          <Link href={`/tickets/${record.ticketId}`} data-testid={`approval-ticket-${record.ticketId}`}>
+            {record.ticketTitle}
+          </Link>
           <Typography.Text type="secondary">ticket #{record.ticketId}</Typography.Text>
         </Space>
       ),
@@ -140,11 +142,16 @@ export default function ApprovalsPage() {
           <Space>
             <Button
               type="primary"
+              data-testid={`approve-ticket-${record.ticketId}`}
               onClick={() => setDecisionTarget({ item: record, action: "APPROVE" })}
             >
               通过
             </Button>
-            <Button danger onClick={() => setDecisionTarget({ item: record, action: "REJECT" })}>
+            <Button
+              danger
+              data-testid={`reject-ticket-${record.ticketId}`}
+              onClick={() => setDecisionTarget({ item: record, action: "REJECT" })}
+            >
               驳回
             </Button>
           </Space>
@@ -193,13 +200,24 @@ export default function ApprovalsPage() {
             当前审批目标：{decisionTarget?.item.ticketTitle}
           </Typography.Paragraph>
           <Form.Item label="审批意见" name="comment">
-            <Input.TextArea rows={4} maxLength={2000} placeholder="填写审批说明或驳回原因" />
+            <Input.TextArea
+              data-testid="approval-comment-input"
+              rows={4}
+              maxLength={2000}
+              placeholder="填写审批说明或驳回原因"
+            />
           </Form.Item>
           <Space>
-            <Button onClick={() => setDecisionTarget(null)}>
+            <Button data-testid="approval-cancel-button" onClick={() => setDecisionTarget(null)}>
               取消
             </Button>
-            <Button type="primary" htmlType="submit" danger={decisionTarget?.action === "REJECT"} loading={submitting}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              data-testid="approval-submit-button"
+              danger={decisionTarget?.action === "REJECT"}
+              loading={submitting}
+            >
               提交
             </Button>
           </Space>
