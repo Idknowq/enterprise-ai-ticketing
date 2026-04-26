@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.validation.BindException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -29,6 +30,27 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = exception.getErrorCode();
         return ResponseEntity.status(errorCode.getStatus())
                 .body(Result.failure(errorCode, exception.getMessage(), TraceIdUtils.currentTraceId()));
+    }
+
+    @ExceptionHandler(BindException.class)
+    public ResponseEntity<Result<Map<String, String>>> handleBindException(BindException exception) {
+        Map<String, String> fieldErrors = exception.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .collect(Collectors.toMap(
+                        FieldError::getField,
+                        error -> error.getDefaultMessage() == null ? "Invalid value" : error.getDefaultMessage(),
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Result.failure(
+                        ErrorCode.COMMON_VALIDATION_ERROR,
+                        ErrorCode.COMMON_VALIDATION_ERROR.getDefaultMessage(),
+                        fieldErrors,
+                        TraceIdUtils.currentTraceId()
+                ));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

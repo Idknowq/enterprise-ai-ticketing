@@ -1,5 +1,6 @@
 import { buildQuery, request } from "@/lib/http";
 import type {
+  DocumentCategoryOptionResponse,
   DocumentListQuery,
   DocumentListResponse,
   DocumentResponse,
@@ -10,6 +11,10 @@ import type {
 
 export function listDocuments(query: DocumentListQuery) {
   return request<DocumentListResponse>(`/documents${buildQuery(query)}`);
+}
+
+export function listDocumentCategories() {
+  return request<DocumentCategoryOptionResponse[]>("/documents/categories");
 }
 
 export function uploadDocument(payload: DocumentUploadPayload) {

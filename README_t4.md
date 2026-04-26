@@ -1,246 +1,151 @@
-# 知识库与检索模块说明
+# Thread 4：知识库与检索模块说明
 
-本文档用于说明当前仓库中知识库与检索模块的设计边界、使用方式、验证方法，以及其他 thread 如何复用该模块能力。
+本文档说明 Thread 4 的模块边界、核心接口、数据契约、类别规范、Embedding/Qdrant 封装，以及其他 thread 的对齐方式。使用与验证优先通过前端完成，本文档不再维护 curl 级别的操作脚本。
 
-## 1. 模块目标
+## 1. 模块边界
 
-本模块负责提供企业级 AI 工单编排系统的知识文档处理与证据检索能力，覆盖：
+Thread 4 负责企业 IT 服务台知识文档的处理与证据检索，目标是给工单处理和 AI 编排提供可解释、可引用、可过滤的知识片段。
 
-- 文档模型设计
+负责范围：
+
+- 文档模型设计：`documents`、`document_chunks`、`citations`
 - 文档上传接口
-- 文档解析（Markdown / PDF / TXT）
+- Markdown / PDF / TXT 解析
 - 文档切分
-- embedding 调用封装
-- 向 Qdrant 写入向量
-- 检索接口实现
-- 基于元数据过滤检索
+- Embedding 调用封装与路由
+- Qdrant 向量写入与检索
+- 元数据过滤检索
 - 检索结果标准化
-- citation 落库能力
+- Citation 落库能力
 
-本模块的目标不是做普通问答，而是为工单处理与 AI 决策提供可解释、可引用、可过滤的证据片段。
+不负责范围：
 
-## 2. 关键边界
-
-- 本模块只负责“检索证据”，不负责 AI 最终判断
 - 不决定工单状态
 - 不做审批判断
-- 不实现 LangGraph / 工作流编排
-- 不直接修改 Ticket 核心状态
-- 可读取 Thread 3 的 ticket 信息来构造检索 query
-- 检索结果必须兼容用户权限上下文
-- 检索结果必须可解释，且可落 citation
+- 不实现 LangGraph / AI 编排
+- 不直接修改 Ticket Core 状态
+- 不负责前端页面
 
-## 3. 当前实现范围
+## 2. 全项目标准类别
 
-当前已实现：
+`category` 已升级为全项目统一的 IT 服务类别标准，不再只是知识库内部字段。数据库仍使用 `varchar` 存储，但所有后端模块的新入参、新输出和新写入值都应统一使用以下标准 code。
 
-- `POST /api/documents/upload`
-- `GET /api/documents`
-- `POST /api/retrieval/search`
-- 文档入库主表 `documents`
-- 文档分块表 `document_chunks`
-- 引用表 `citations`
-- 文档解析器注册与自动识别
-- 文本切分与摘要 snippet 生成
-- 本地 Ollama / 商用 OpenAI 的 `EmbeddingProvider` 抽象与路由
-- Qdrant collection 自动创建、向量 upsert、带 payload 的过滤检索
-- 按 `department` / `accessLevel` 做权限兼容过滤
-- 检索结果统一 schema 输出
+当前 Thread 4 代码中该标准暂由 `KnowledgeDocumentCategory` 承载；后续如迁移到公共 domain，可重命名为 `ItServiceCategory` 或等价类型，但 code 清单和语义必须保持稳定。
 
-## 4. 数据模型
+| Code | 名称 | 典型文档 |
+|---|---|---|
+| `REMOTE_ACCESS` | 远程访问 / VPN | VPN 证书失效、远程办公连接失败、客户端配置 |
+| `IDENTITY_ACCOUNT` | 账号与身份 | 账号开通、账号锁定、离职账号禁用、AD/LDAP 问题 |
+| `PASSWORD_MFA` | 密码与 MFA | 密码重置、MFA 绑定、验证码异常、SSO 登录失败 |
+| `ACCESS_REQUEST` | 权限申请 | 系统权限申请、权限变更、临时授权、审批流程 |
+| `EMAIL_COLLABORATION` | 邮件与协作 | 邮箱异常、邮件组、日历、Teams/Slack/飞书协作 |
+| `DEVICE_HARDWARE` | 终端与硬件 | 电脑、显示器、打印机、外设、资产更换 |
+| `OPERATING_SYSTEM` | 操作系统 | Windows/macOS 系统故障、补丁、启动异常 |
+| `SOFTWARE_APPLICATION` | 软件与应用 | 办公软件、业务应用安装、客户端异常 |
+| `NETWORK_CONNECTIVITY` | 网络连接 | Wi-Fi、有线网络、DNS、代理、内网访问异常 |
+| `SECURITY_INCIDENT` | 安全事件 | 钓鱼邮件、恶意软件、账号异常登录、安全上报 |
+| `DATA_BACKUP_RECOVERY` | 数据备份与恢复 | 文件恢复、备份策略、误删数据恢复 |
+| `CLOUD_INFRASTRUCTURE` | 云与基础设施 | 云资源、服务器、容器、存储、基础设施运维 |
+| `DATABASE_DATA_PLATFORM` | 数据库与数据平台 | 数据库连接、数据权限、数据任务、BI 平台 |
+| `DEV_ENGINEERING` | 开发与工程工具 | Git、CI/CD、制品库、开发环境、测试环境 |
+| `ITSM_PROCESS` | ITSM 流程 | 工单流转、SLA、升级路径、服务目录 |
+| `ASSET_PROCUREMENT` | 资产与采购 | 设备领用、采购申请、资产归还、库存流程 |
+| `CHANGE_RELEASE` | 变更与发布 | 变更申请、发布窗口、回滚 SOP、维护公告 |
+| `POLICY_COMPLIANCE` | 政策与合规 | 信息安全制度、审计要求、合规流程 |
+| `GENERAL_FAQ` | 通用 FAQ | 通用服务台问答、常见问题合集 |
+| `OTHER` | 其他 | 暂时无法归类但仍需入库的文档，需后续治理 |
 
-数据库 migration 文件：
+类别规则：
+
+- 新上传文档、检索过滤以及后续工单/AI/审批相关 category 入参都必须使用标准 code。
+- API 新入参严格拒绝旧值或自由文本，例如 `VPN`、`VPN_ISSUE`、`Finance`、`IT` 都不应作为合法 category。
+- `OTHER` 仅作为兜底，不建议长期大量使用。
+- 历史数据可以通过 Flyway migration 归一化，但不要把旧值作为长期兼容 API。
+- Qdrant 旧 payload 不会被数据库 migration 自动更新，已有旧索引需要重建 collection 或重新上传文档。
+
+核心代码：
+
+- 枚举：`backend/src/main/java/com/enterprise/ticketing/knowledge/domain/KnowledgeDocumentCategory.java`
+- 历史迁移：`backend/src/main/resources/db/migration/V8__normalize_knowledge_document_categories.sql`
+
+## 3. 数据模型
+
+Migration：
 
 - `backend/src/main/resources/db/migration/V4__init_knowledge_module.sql`
+- `backend/src/main/resources/db/migration/V8__normalize_knowledge_document_categories.sql`
 
-当前新增三张表：
+核心表：
 
-### 4.1 documents
+- `documents`：文档主表，保存标题、来源文件、类别、部门、访问级别、版本、全文、索引状态、embedding 模型等。
+- `document_chunks`：文档分块表，保存 chunk 内容、snippet、业务 chunkId、Qdrant pointId。
+- `citations`：引用表，保存检索命中的证据片段，可关联 `ticketId` 或 `aiRunId`。
 
-核心字段：
+关键元数据：
 
-- `id`
 - `title`
-- `source_filename`
-- `content_type`
-- `document_type`
 - `category`
 - `department`
-- `access_level`
+- `accessLevel`
 - `version`
-- `updated_at`
-- `content_text`
-- `chunk_count`
-- `index_status`
-- `last_indexed_at`
-- `embedding_model`
-- `created_by_user_id`
-- `created_at`
+- `updatedAt`
 
-### 4.2 document_chunks
+## 4. 核心接口
 
-核心字段：
+### 4.1 上传文档
 
-- `id`
-- `document_id`
-- `chunk_id`
-- `chunk_index`
-- `vector_point_id`
-- `content`
-- `content_snippet`
-- `created_at`
-
-说明：
-
-- `chunk_id` 是业务稳定 ID，例如 `doc-12-chunk-3`
-- `vector_point_id` 与 Qdrant point id 对齐
-- `content_snippet` 用于接口返回和 citation 展示
-
-### 4.3 citations
-
-核心字段：
-
-- `id`
-- `ticket_id`
-- `ai_run_id`
-- `document_id`
-- `chunk_id`
-- `title`
-- `content_snippet`
-- `score`
-- `category`
-- `department`
-- `access_level`
-- `version`
-- `document_updated_at`
-- `search_query`
-- `why_matched`
-- `created_by_user_id`
-- `created_at`
-
-说明：
-
-- 可同时支持 ticket 详情证据展示和 AI 运行记录追溯
-- `ticket_id`、`ai_run_id` 允许为空，便于通用检索场景复用
-
-## 5. 关键代码位置
-
-### 控制器
-
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/controller/DocumentController.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/controller/RetrievalController.java`
-
-### Service 契约
-
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/DocumentService.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/RetrievalService.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/EmbeddingProvider.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/CitationService.java`
-
-### Service 实现
-
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/DocumentServiceImpl.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/RetrievalServiceImpl.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/CitationServiceImpl.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/DocumentAccessPolicy.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/RoutingEmbeddingProvider.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/LocalOllamaEmbeddingProvider.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/OpenAiEmbeddingProvider.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/TextChunker.java`
-
-### 解析器
-
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/DocumentParserRegistry.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/MarkdownDocumentParser.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/TextDocumentParser.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/PdfDocumentParser.java`
-
-### 持久化与向量库
-
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/entity/DocumentEntity.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/entity/DocumentChunkEntity.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/entity/CitationEntity.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/repository/DocumentRepository.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/repository/DocumentChunkRepository.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/repository/CitationRepository.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/qdrant/QdrantClient.java`
-
-### 配置
-
-- `backend/src/main/java/com/enterprise/ticketing/config/ApplicationProperties.java`
-- `backend/src/main/resources/application.yml`
-
-## 6. 接口说明
-
-## 6.1 上传文档
-
-接口：
-
-```http
-POST /api/documents/upload
-Content-Type: multipart/form-data
-Authorization: Bearer <token>
-```
+`POST /api/documents/upload`
 
 权限：
 
-- 当前实现限制为 `ADMIN`
+- `ADMIN`
+
+Content-Type：
+
+- `multipart/form-data`
 
 表单字段：
 
-- `file`: 文档文件，必填
-- `title`: 文档标题，可选，不传时默认取文件名
-- `category`: 文档类别，必填
-- `department`: 所属部门，可选，不传时使用 `GLOBAL`
-- `accessLevel`: 访问级别，必填
-- `version`: 文档版本，必填
-- `updatedAt`: 文档更新时间，必填
-
-支持格式：
-
-- `.md`
-- `.markdown`
-- `.txt`
-- `.pdf`
-
-示例：
-
-```bash
-curl -X POST http://localhost:8080/api/documents/upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@./samples/knowledge/vpn_cert_sop.md" \
-  -F "title=VPN 证书失效处理 SOP" \
-  -F "category=VPN" \
-  -F "department=IT" \
-  -F "accessLevel=INTERNAL" \
-  -F "version=v1.0" \
-  -F "updatedAt=2026-04-16T00:00:00Z"
-```
+- `file`：必填，支持 `.md`、`.markdown`、`.txt`、`.pdf`
+- `title`：可选，不传时默认取文件名
+- `category`：必填，标准知识类别 code，例如 `REMOTE_ACCESS`
+- `department`：可选，不传时默认 `GLOBAL`
+- `accessLevel`：必填，`PUBLIC` / `INTERNAL` / `RESTRICTED` / `CONFIDENTIAL`
+- `version`：必填
+- `updatedAt`：必填，ISO-8601 时间
 
 处理链路：
 
-1. 鉴权并校验角色
-2. 解析文档内容
-3. 切分 chunk
-4. 调用 `EmbeddingProvider`
-5. 向 Qdrant upsert 向量
-6. 写入 `documents` 和 `document_chunks`
-7. 返回统一 `DocumentResponse`
+1. 校验权限与入参。
+2. 解析文档内容。
+3. 切分 chunk。
+4. 调用 `EmbeddingProvider`。
+5. 写入 Qdrant。
+6. 写入 `documents` 与 `document_chunks`。
+7. 返回 `DocumentResponse`。
 
-## 6.2 列出文档
+### 4.2 获取标准类别
 
-接口：
+`GET /api/documents/categories`
 
-```http
-GET /api/documents
-Authorization: Bearer <token>
-```
+返回字段：
+
+- `code`
+- `displayName`
+- `description`
+
+前端上传页面和其他 thread 应通过该接口获取类别选项，不要硬编码自由文本类别。后续如果平台层新增全局类别接口，可以迁移到全局路径，但返回 code 必须保持一致。
+
+### 4.3 列出文档
+
+`GET /api/documents`
 
 权限：
 
-- 当前实现允许 `ADMIN`、`SUPPORT_AGENT`
+- `ADMIN`
+- `SUPPORT_AGENT`
 
-支持 query 参数：
+Query 参数：
 
 - `keyword`
 - `category`
@@ -252,138 +157,98 @@ Authorization: Bearer <token>
 
 说明：
 
-- 列表接口也会经过访问级别与部门范围约束
-- 若请求的过滤条件超出当前用户权限，会直接返回空列表
+- `category` 只能使用标准 code。
+- 列表接口同样经过部门与访问级别过滤。
+- 当过滤条件超出当前用户权限范围时，返回空列表。
 
-## 6.3 检索知识证据
+### 4.4 检索知识证据
 
-接口：
+`POST /api/retrieval/search`
 
-```http
-POST /api/retrieval/search
-Content-Type: application/json
-Authorization: Bearer <token>
-```
+请求字段：
 
-请求体字段：
-
-- `query`: 原始检索文本，可选
-- `ticketId`: 工单 ID，可选；当 `query` 为空时使用
-- `ticketContext`: AI 侧准备的工单上下文，可选；当前用于兼容 Thread 5 升级后的契约
-- `category`: 可选元数据过滤
-- `department`: 可选元数据过滤
-- `accessLevel`: 可选元数据过滤
-- `limit`: 返回条数，默认 5，最大 10
-- `saveCitations`: 是否落 citation，默认 `false`
-- `aiRunId`: AI 运行 ID，可选
+- `query`：原始检索文本，可选
+- `ticketId`：工单 ID，可选；当 `query` 为空时用于读取工单标题、描述、分类并构造 query
+- `ticketContext`：AI 侧准备的工单上下文，可选
+- `category`：标准知识类别 code，可选
+- `department`：部门过滤，可选
+- `accessLevel`：访问级别过滤，可选
+- `limit`：返回条数，默认 5，最大 10
+- `saveCitations`：是否落 citation，默认 `false`
+- `aiRunId`：AI 运行 ID，可选
 
 请求规则：
 
-- `query` 和 `ticketId` 至少要有一个
-- 若只传 `ticketId`，服务会通过 Thread 3 的 `TicketQueryService` 读取工单标题、描述、分类来构造 query
+- `query` 和 `ticketId` 至少提供一个。
+- 若传 `ticketId`，Thread 4 只读取 Ticket 信息，不修改 Ticket 状态。
+- `category` 只能接收标准类别 code；Ticket Core 完成统一前，调用方不要把自由文本 `ticket.category` 直接传入该字段。
 
-示例 1：直接按文本检索
-
-```bash
-curl -X POST http://localhost:8080/api/retrieval/search \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": "VPN 连接失败 证书失效",
-    "category": "VPN",
-    "limit": 5,
-    "saveCitations": true,
-    "aiRunId": "run-001"
-  }'
-```
-
-示例 2：按工单检索
-
-```bash
-curl -X POST http://localhost:8080/api/retrieval/search \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "ticketId": 123,
-    "limit": 5,
-    "saveCitations": true,
-    "aiRunId": "run-002"
-  }'
-```
-
-返回结构：
+核心返回 schema：
 
 ```json
 {
-  "success": true,
-  "code": "COMMON_SUCCESS",
-  "message": "Success",
-  "data": {
-    "query": "VPN 连接失败 证书失效",
-    "ticketId": 123,
-    "diagnostics": {
-      "retrievalMode": "VECTOR_WITH_METADATA_FILTERS",
-      "candidateCount": 3,
-      "returnedCount": 3,
-      "filterSummary": {
-        "category": "VPN",
-        "departments": ["IT"],
-        "accessLevels": ["INTERNAL", "PUBLIC"],
-        "ticketContextProvided": true
-      }
-    },
-    "results": [
-      {
+  "query": "VPN 连接失败 证书失效",
+  "ticketId": 123,
+  "diagnostics": {
+    "retrievalMode": "VECTOR_WITH_METADATA_FILTERS",
+    "candidateCount": 3,
+    "returnedCount": 3,
+    "filterSummary": {
+      "category": "REMOTE_ACCESS",
+      "departments": ["IT"],
+      "accessLevels": ["INTERNAL", "PUBLIC"],
+      "ticketContextProvided": true
+    }
+  },
+  "results": [
+    {
+      "docId": 1,
+      "title": "VPN 证书失效处理 SOP",
+      "chunkId": "doc-1-chunk-0",
+      "contentSnippet": "当用户在远程办公时遇到证书失效...",
+      "score": 0.82,
+      "retrievalScore": 0.82,
+      "rerankScore": null,
+      "sourceRef": "citation:10",
+      "metadata": {
         "docId": 1,
         "title": "VPN 证书失效处理 SOP",
-        "chunkId": "doc-1-chunk-0",
-        "contentSnippet": "当用户在远程办公时遇到证书失效...",
-        "score": 0.82,
-        "retrievalScore": 0.82,
-        "rerankScore": null,
-        "sourceRef": "citation:10",
-        "metadata": {
-          "docId": 1,
-          "title": "VPN 证书失效处理 SOP",
-          "category": "VPN",
-          "department": "IT",
-          "accessLevel": "INTERNAL",
-          "version": "v1.0",
-          "updatedAt": "2026-04-16T00:00:00Z"
-        },
-        "metadataMap": {
-          "docId": 1,
-          "title": "VPN 证书失效处理 SOP",
-          "category": "VPN",
-          "department": "IT",
-          "accessLevel": "INTERNAL",
-          "version": "v1.0",
-          "updatedAt": "2026-04-16T00:00:00Z"
-        },
-        "whyMatched": "Matched keywords: vpn, 证书, 失效",
-        "citationId": 10
-      }
-    ]
-  }
+        "category": "REMOTE_ACCESS",
+        "department": "IT",
+        "accessLevel": "INTERNAL",
+        "version": "v1.0",
+        "updatedAt": "2026-04-16T00:00:00Z"
+      },
+      "metadataMap": {
+        "docId": 1,
+        "title": "VPN 证书失效处理 SOP",
+        "category": "REMOTE_ACCESS",
+        "department": "IT",
+        "accessLevel": "INTERNAL",
+        "version": "v1.0",
+        "updatedAt": "2026-04-16T00:00:00Z"
+      },
+      "whyMatched": "Matched keywords: vpn, 证书, 失效",
+      "citationId": 10
+    }
+  ]
 }
 ```
 
-返回字段补充说明：
+字段说明：
 
-- `score` 保持为对外统一总分，兼容旧调用方
-- `retrievalScore` 是当前原始检索分数，Thread 5 应优先消费
-- `rerankScore` 为后续 rerank 预留字段，当前 MVP 通常为 `null`
-- `sourceRef` 在已落 citation 时优先返回 `citation:<id>`
-- `metadataMap` 提供给 AI 模块直接消费的扁平 metadata
-- `diagnostics` 用于空结果诊断、AI 运行审计和后续可观测性对接
+- `score`：兼容旧调用方的总分字段。
+- `retrievalScore`：当前向量检索原始分数。
+- `rerankScore`：后续 rerank 预留字段，当前通常为 `null`。
+- `sourceRef`：若已落 citation，优先返回 `citation:<id>`。
+- `metadataMap`：给 AI 模块直接消费的扁平 metadata。
+- `diagnostics`：用于空结果诊断、AI 运行审计和可观测性。
 
-## 7. 权限与过滤规则
+## 5. 权限与过滤
 
-当前权限策略由 `DocumentAccessPolicy` 统一处理。
+权限过滤由 `DocumentAccessPolicy` 统一处理。
 
-### 7.1 访问级别
-
-当前定义：
+访问级别：
 
 - `PUBLIC`
 - `INTERNAL`
@@ -392,62 +257,62 @@ curl -X POST http://localhost:8080/api/retrieval/search \
 
 默认可见范围：
 
-- `EMPLOYEE`: `PUBLIC`、`INTERNAL`
-- `APPROVER`、`SUPPORT_AGENT`: `PUBLIC`、`INTERNAL`、`RESTRICTED`
-- `ADMIN`: 全部可见
+- `EMPLOYEE`：`PUBLIC`、`INTERNAL`
+- `APPROVER`、`SUPPORT_AGENT`：`PUBLIC`、`INTERNAL`、`RESTRICTED`
+- `ADMIN`：全部可见
 
-### 7.2 部门范围
+部门规则：
 
-规则：
+- `ADMIN`、`SUPPORT_AGENT` 可跨部门读取。
+- 其他用户默认只可读本部门和 `GLOBAL` 文档。
+- 显式传入超出权限范围的 `department` 时返回空结果。
 
-- `ADMIN`、`SUPPORT_AGENT` 可跨部门读取
-- 其他用户默认只可读本部门和 `GLOBAL` 文档
-- 若显式传入超出权限范围的 `department`，返回空结果
-
-### 7.3 与用户上下文的关系
-
-本模块依赖 Thread 2 的：
+依赖 Thread 2：
 
 - `UserContext`
 - `UserPrincipal`
-- 角色信息
-- 当前用户 `department`
+- 用户角色
+- 用户部门
 
-因此其他模块不需要自行重复解析 JWT，也不需要单独传用户部门给知识模块。
+其他模块不需要重复解析 JWT，也不应自行拼接权限过滤。
 
-## 8. Embedding 与 Qdrant 说明
+## 6. Embedding 与 Qdrant
 
-## 8.1 EmbeddingProvider
+### 6.1 EmbeddingProvider
+
+对外统一抽象：
+
+- `EmbeddingProvider`
 
 当前实现：
 
-- 接口：`EmbeddingProvider`
-- 对外唯一注入实现：`RoutingEmbeddingProvider`
-- 本地 provider：`LocalOllamaEmbeddingProvider`
-- 商用 provider：`OpenAiEmbeddingProvider`
+- `RoutingEmbeddingProvider`：唯一对外注入实现，负责按配置路由。
+- `LocalOllamaEmbeddingProvider`：本地 Ollama provider，默认模型 `nomic-embed-text:latest`。
+- `OpenAiEmbeddingProvider`：商用 OpenAI provider，预留模型 `text-embedding-3-large`。
 
-说明：
+配置入口：
 
-- 当前默认走本地 Ollama `nomic-embed-text:latest`
-- 已预留商用 OpenAI `text-embedding-3-large` 接入能力
-- 上传文档和检索查询都只依赖统一 `EmbeddingProvider`，不会把 provider 细节泄漏到主链路
-- 如需切换模型，优先切换 `app.knowledge.embedding.routing.mode` 和对应 provider 配置
+- `app.knowledge.embedding.routing.mode`
+- `app.knowledge.embedding.local.*`
+- `app.knowledge.embedding.commercial.*`
 
-## 8.2 QdrantClient
+规则：
+
+- 当前默认使用本地 Ollama。
+- 上传和检索链路只依赖 `EmbeddingProvider`，不感知 provider 细节。
+- 切换模型后，Qdrant collection 维度必须与当前 provider 的 `dimension()` 一致。
+
+### 6.2 QdrantClient
 
 能力：
 
-- 自动检查 collection 是否存在
-- 不存在时自动创建
-- upsert points
-- search with payload filter
+- 检查 collection 是否存在。
+- collection 不存在时自动创建。
+- 写入 chunk 向量。
+- 基于 payload filter 检索。
+- 检查已有 collection vector size，维度不一致时直接报错。
 
-当前 collection 配置：
-
-- `app.knowledge.collection-name`
-- 当前活动 embedding provider 的 `dimension()`
-
-当前 payload 字段包括：
+当前 payload 字段：
 
 - `docId`
 - `title`
@@ -460,784 +325,125 @@ curl -X POST http://localhost:8080/api/retrieval/search \
 - `version`
 - `updatedAt`
 
-这些字段支持检索结果返回和元数据过滤。
-
-维度一致性规则：
-
-- Qdrant collection 的 vector size 由当前活动 embedding provider 决定
-- 若 collection 已存在但维度与当前模型不一致，服务会直接报错
-- 切换本地/商用模型前，应先清理或重建对应 Qdrant collection
-
-## 9. 配置项
-
-当前新增配置位于 `app.knowledge.*`：
-
-- `app.knowledge.collection-name`
-- `app.knowledge.embedding-dimension`
-- `app.knowledge.chunk-size`
-- `app.knowledge.chunk-overlap`
-- `app.knowledge.default-top-k`
-- `app.knowledge.max-top-k`
-- `app.knowledge.global-department`
-- `app.knowledge.embedding.routing.mode`
-- `app.knowledge.embedding.local.*`
-- `app.knowledge.embedding.commercial.*`
-
-可通过环境变量覆盖：
-
-- `APP_KNOWLEDGE_COLLECTION_NAME`
-- `APP_KNOWLEDGE_EMBEDDING_DIMENSION`
-- `APP_KNOWLEDGE_CHUNK_SIZE`
-- `APP_KNOWLEDGE_CHUNK_OVERLAP`
-- `APP_KNOWLEDGE_DEFAULT_TOP_K`
-- `APP_KNOWLEDGE_MAX_TOP_K`
-- `APP_KNOWLEDGE_GLOBAL_DEPARTMENT`
-- `APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE`
-- `APP_KNOWLEDGE_EMBEDDING_LOCAL_ENABLED`
-- `APP_KNOWLEDGE_EMBEDDING_LOCAL_PROVIDER_TYPE`
-- `APP_KNOWLEDGE_EMBEDDING_LOCAL_MODEL`
-- `APP_KNOWLEDGE_EMBEDDING_LOCAL_BASE_URL`
-- `APP_KNOWLEDGE_EMBEDDING_LOCAL_EMBEDDING_PATH`
-- `APP_KNOWLEDGE_EMBEDDING_LOCAL_TIMEOUT`
-- `APP_KNOWLEDGE_EMBEDDING_LOCAL_DIMENSION`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_ENABLED`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_PROVIDER_TYPE`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_MODEL`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_BASE_URL`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_API_KEY`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_EMBEDDING_PATH`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_TIMEOUT`
-- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_DIMENSION`
-
-推荐默认值：
-
-```bash
-APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE=local
-APP_KNOWLEDGE_EMBEDDING_LOCAL_MODEL=nomic-embed-text:latest
-APP_KNOWLEDGE_EMBEDDING_LOCAL_BASE_URL=http://127.0.0.1:11434
-APP_KNOWLEDGE_EMBEDDING_LOCAL_EMBEDDING_PATH=/api/embeddings
-APP_KNOWLEDGE_EMBEDDING_LOCAL_DIMENSION=768
-```
-
-若切换商用 OpenAI：
-
-```bash
-APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE=commercial
-APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_ENABLED=true
-APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_MODEL=text-embedding-3-large
-APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_BASE_URL=https://api.openai.com
-APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_API_KEY=your-api-key
-APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_EMBEDDING_PATH=/v1/embeddings
-APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_DIMENSION=3072
-```
-
-## 10. 如何启动与使用
-
-### 10.1 启动基础设施
-
-以下命令均在项目根目录执行。
-
-先启动基础设施：
-
-```bash
-docker compose up -d
-```
-
-需要至少保证以下依赖可用：
-
-- PostgreSQL
-- Qdrant
-
-建议立刻确认关键容器已启动：
-
-```bash
-docker compose ps postgres qdrant
-```
-
-预期：
-
-- `postgres` 状态为 `Up`
-- `qdrant` 状态为 `Up`
-
-### 10.2 启动后端
-
-下面开始，除非特别说明，示例命令默认都在**仓库根目录**执行。
-
-启动后端时再进入 `backend/` 目录，建议显式指定数据库地址为 `127.0.0.1`，避免本机 `localhost` 解析差异：
+维度一致性要求：
 
-```bash
-cd backend
-APP_DB_HOST=127.0.0.1 \
-APP_DB_PORT=5432 \
-APP_DB_NAME=ticketing \
-APP_DB_USERNAME=ticketing \
-APP_DB_PASSWORD=ticketing \
-APP_QDRANT_HOST=127.0.0.1 \
-APP_QDRANT_HTTP_PORT=6333 \
-mvn clean spring-boot:run
-```
+- collection vector size 由当前活动 embedding provider 决定。
+- 切换本地/商用模型前，应删除或重建对应 Qdrant collection。
+- 本轮不支持多 embedding 模型共用同一个 collection。
 
-说明：
+## 7. 关键代码位置
 
-- 这里使用 `mvn clean spring-boot:run`，避免旧的 `target/classes` 中残留过期 migration
-- 如果你已经执行过 `mvn clean`，也可以使用 `mvn spring-boot:run`
-- 若后端成功启动，终端中会出现 `Tomcat started on port 8080`
+Controller：
 
-### 10.3 登录获取 token
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/controller/DocumentController.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/controller/RetrievalController.java`
 
-先使用 Thread 2 提供的登录接口获取 JWT。
+Service 契约：
 
-建议先准备基础变量：
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/DocumentService.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/RetrievalService.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/EmbeddingProvider.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/CitationService.java`
 
-```bash
-BASE_URL='http://localhost:8080'
-ADMIN_USERNAME='admin01'
-ADMIN_PASSWORD='ChangeMe123!'
-EMPLOYEE_USERNAME='employee01'
-EMPLOYEE_PASSWORD='ChangeMe123!'
-SUPPORT_USERNAME='support01'
-SUPPORT_PASSWORD='ChangeMe123!'
-```
+核心实现：
 
-获取管理员 token：
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/DocumentServiceImpl.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/RetrievalServiceImpl.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/CitationServiceImpl.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/DocumentAccessPolicy.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/RoutingEmbeddingProvider.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/LocalOllamaEmbeddingProvider.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/OpenAiEmbeddingProvider.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/qdrant/QdrantClient.java`
 
-```bash
-curl -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$ADMIN_USERNAME\",
-    \"password\": \"$ADMIN_PASSWORD\"
-  }"
-```
-
-如果你本机没有 `jq`，可用下面这段命令直接提取 token：
-
-```bash
-ADMIN_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$ADMIN_USERNAME\",
-    \"password\": \"$ADMIN_PASSWORD\"
-  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
-
-echo "$ADMIN_TOKEN"
-```
-
-同理，获取普通员工 token：
-
-```bash
-EMPLOYEE_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$EMPLOYEE_USERNAME\",
-    \"password\": \"$EMPLOYEE_PASSWORD\"
-  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+解析器：
 
-echo "$EMPLOYEE_TOKEN"
-```
-
-### 10.4 上传示例知识文档
-
-仓库内已提供一份可直接上传的示例文档：
-
-- `samples/knowledge/vpn_cert_sop.md`
-
-如果你当前在仓库根目录，直接执行：
-
-```bash
-curl -X POST "$BASE_URL/api/documents/upload" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -F "file=@./samples/knowledge/vpn_cert_sop.md" \
-  -F "title=VPN 证书失效处理 SOP" \
-  -F "category=VPN" \
-  -F "department=IT" \
-  -F "accessLevel=INTERNAL" \
-  -F "version=v1.0" \
-  -F "updatedAt=2026-04-17T00:00:00Z"
-```
-
-如果你当前在 `backend/` 目录执行，上面的文件路径改成：
-
-```bash
--F "file=@../samples/knowledge/vpn_cert_sop.md"
-```
-
-如果成功，预期响应中会出现：
-
-- `success: true`
-- `data.indexStatus: INDEXED`
-- `data.chunkCount` 大于 0
-- `data.metadata.category: VPN`
-
-### 10.5 列出已上传文档
-
-使用管理员或支持人员调用：
-
-```bash
-curl "$BASE_URL/api/documents?page=0&size=20" \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-```
-
-如果只想筛选 VPN 类别：
-
-```bash
-curl "$BASE_URL/api/documents?page=0&size=20&category=VPN" \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-```
-
-### 10.6 直接按文本检索
-
-如果你上传的文档是 `department=IT`，请优先使用 `support01` 或 `admin01` 验证。普通员工 `employee01` 默认部门是 `GENERAL`，检索 `IT` 文档时会被权限过滤挡住。
-
-先获取支持人员 token：
-
-```bash
-SUPPORT_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$SUPPORT_USERNAME\",
-    \"password\": \"$SUPPORT_PASSWORD\"
-  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
-
-echo "$SUPPORT_TOKEN"
-```
-
-```bash
-curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $SUPPORT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": "今天在家连接 VPN 失败，提示证书失效",
-    "ticketContext": "title: VPN 证书失效，无法连接; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired",
-    "category": "VPN",
-    "limit": 5,
-    "saveCitations": true,
-    "aiRunId": "demo-run-001"
-  }'
-```
-
-预期：
-
-- 返回 `results`
-- 至少有 1 条结果命中 `VPN 证书失效处理 SOP`
-- `whyMatched` 不为空
-- `citationId` 不为空，因为 `saveCitations=true`
-- `sourceRef` 形如 `citation:<id>`
-- `diagnostics.returnedCount` 大于 0
-
-### 10.7 创建工单并按工单检索
-
-如果你要验证 Thread 3 联动，先创建工单。
-
-先获取支持人员 token：
-
-```bash
-SUPPORT_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$SUPPORT_USERNAME\",
-    \"password\": \"$SUPPORT_PASSWORD\"
-  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
-```
-
-创建工单：
-
-```bash
-TICKET_RESPONSE=$(curl -s -X POST "$BASE_URL/api/tickets" \
-  -H "Authorization: Bearer $SUPPORT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "title": "VPN 证书失效，无法连接",
-    "description": "今天在家连接公司 VPN 失败，客户端提示证书失效。",
-    "category": "VPN",
-    "priority": "HIGH"
-  }')
-
-echo "$TICKET_RESPONSE"
-```
-
-提取工单 ID：
-
-```bash
-TICKET_ID=$(echo "$TICKET_RESPONSE" | tr -d '\n' | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-echo "$TICKET_ID"
-```
-
-按工单检索：
-
-```bash
-curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $SUPPORT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"ticketId\": $TICKET_ID,
-    \"ticketContext\": \"title: VPN 证书失效，无法连接; description: 今天在家连接公司 VPN 失败，客户端提示证书失效。\",
-    \"limit\": 5,
-    \"saveCitations\": true,
-    \"aiRunId\": \"demo-run-ticket-001\"
-  }"
-```
-
-## 11. 如何验证
-
-下面给出一套可以从零复制执行的完整验证流程。
-
-## 11.1 一次性准备环境
-
-在项目根目录执行：
-
-```bash
-docker compose up -d postgres qdrant redis rabbitmq
-docker compose ps postgres qdrant redis rabbitmq
-```
-
-若当前默认走本地 Ollama embedding，请先确认本地模型服务可用：
-
-```bash
-curl http://127.0.0.1:11434/api/tags
-curl -X POST http://127.0.0.1:11434/api/embeddings \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "nomic-embed-text:latest",
-    "prompt": "vpn certificate expired"
-  }'
-```
-
-预期：
-
-- 第一个命令能返回模型列表
-- 第二个命令能返回 `embedding` 数组
-
-确认 PostgreSQL 可登录：
-
-```bash
-docker exec -it enterprise-ai-ticketing-postgres \
-  psql -U ticketing -d ticketing -c 'select 1'
-```
-
-确认 Qdrant 可访问：
-
-```bash
-curl http://127.0.0.1:6333/collections
-```
-
-启动后端：
-
-```bash
-cd backend
-APP_DB_HOST=127.0.0.1 \
-APP_DB_PORT=5432 \
-APP_DB_NAME=ticketing \
-APP_DB_USERNAME=ticketing \
-APP_DB_PASSWORD=ticketing \
-APP_QDRANT_HOST=127.0.0.1 \
-APP_QDRANT_HTTP_PORT=6333 \
-APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE=local \
-APP_KNOWLEDGE_EMBEDDING_LOCAL_ENABLED=true \
-APP_KNOWLEDGE_EMBEDDING_LOCAL_MODEL=nomic-embed-text:latest \
-APP_KNOWLEDGE_EMBEDDING_LOCAL_BASE_URL=http://127.0.0.1:11434 \
-APP_KNOWLEDGE_EMBEDDING_LOCAL_EMBEDDING_PATH=/api/embeddings \
-APP_KNOWLEDGE_EMBEDDING_LOCAL_DIMENSION=768 \
-mvn clean spring-boot:run
-```
-
-### 11.2 验证文档上传成功
-
-在另一个终端执行。以下命令假设你当前在**仓库根目录**：
-
-```bash
-cd /Users/qianhaoda/Documents/Codex/企业级AI工单编排系统
-
-BASE_URL='http://localhost:8080'
-ADMIN_USERNAME='admin01'
-ADMIN_PASSWORD='ChangeMe123!'
-
-ADMIN_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$ADMIN_USERNAME\",
-    \"password\": \"$ADMIN_PASSWORD\"
-  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
-
-curl -X POST "$BASE_URL/api/documents/upload" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -F "file=@./samples/knowledge/vpn_cert_sop.md" \
-  -F "title=VPN 证书失效处理 SOP" \
-  -F "category=VPN" \
-  -F "department=IT" \
-  -F "accessLevel=INTERNAL" \
-  -F "version=v1.0" \
-  -F "updatedAt=2026-04-17T00:00:00Z"
-```
-
-预期检查点：
-
-- HTTP 返回成功
-- `indexStatus` 为 `INDEXED`
-- `chunkCount` 大于 0
-
-### 11.3 验证 PostgreSQL 落库
-
-查看 `documents` 表：
-
-```bash
-docker exec -it enterprise-ai-ticketing-postgres \
-  psql -U ticketing -d ticketing -c 'select id, title, category, department, access_level, chunk_count, index_status from documents order by id desc limit 5;'
-```
-
-查看 `document_chunks` 表：
-
-```bash
-docker exec -it enterprise-ai-ticketing-postgres \
-  psql -U ticketing -d ticketing -c 'select document_id, chunk_id, chunk_index from document_chunks order by id desc limit 10;'
-```
-
-预期：
-
-- `documents` 中出现刚上传的 SOP
-- `document_chunks` 中出现 `doc-<id>-chunk-<index>` 形式的 chunk
-
-### 11.4 验证 Qdrant 已写入向量
-
-先查看 collection：
-
-```bash
-curl http://localhost:6333/collections/knowledge_chunks
-```
-
-如果返回 200，说明 collection 已创建。
-
-如果想进一步看集合列表：
-
-```bash
-curl http://localhost:6333/collections
-```
-
-### 11.5 验证直接检索
-
-```bash
-SUPPORT_USERNAME='support01'
-SUPPORT_PASSWORD='ChangeMe123!'
-
-SUPPORT_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$SUPPORT_USERNAME\",
-    \"password\": \"$SUPPORT_PASSWORD\"
-  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
-
-curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $SUPPORT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": "VPN 证书失效 无法连接",
-    "ticketContext": "title: VPN 客户端提示证书失效; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired",
-    "category": "VPN",
-    "limit": 5,
-    "saveCitations": true,
-    "aiRunId": "verify-direct-search-001"
-  }'
-```
-
-预期检查点：
-
-- 返回 `results`
-- `results[0].title` 大概率为 `VPN 证书失效处理 SOP`
-- `results[*].metadata.category` 为 `VPN`
-- `citationId` 不为空
-- `sourceRef` 为 `citation:<id>`
-- `diagnostics.retrievalMode` 当前为 `VECTOR_WITH_METADATA_FILTERS`
-
-### 11.6 验证 citations 落库
-
-```bash
-docker exec -it enterprise-ai-ticketing-postgres \
-  psql -U ticketing -d ticketing -c 'select id, ticket_id, ai_run_id, document_id, chunk_id, score from citations order by id desc limit 10;'
-```
-
-预期：
-
-- 出现 `ai_run_id = verify-direct-search-001`
-- `document_id`、`chunk_id`、`score` 均有值
-
-### 11.7 验证按工单检索
-
-```bash
-TICKET_RESPONSE=$(curl -s -X POST "$BASE_URL/api/tickets" \
-  -H "Authorization: Bearer $SUPPORT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "title": "VPN 客户端提示证书失效",
-    "description": "今天在家连接公司 VPN 失败，客户端提示 certificate expired。",
-    "category": "VPN",
-    "priority": "HIGH"
-  }')
-
-TICKET_ID=$(echo "$TICKET_RESPONSE" | tr -d '\n' | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-
-curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $SUPPORT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"ticketId\": $TICKET_ID,
-    \"ticketContext\": \"title: VPN 客户端提示证书失效; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired\",
-    \"limit\": 5,
-    \"saveCitations\": true,
-    \"aiRunId\": \"verify-ticket-search-001\"
-  }"
-```
-
-预期：
-
-- 即使不显式传 `query` 也能返回证据
-- 结果中依然能命中 VPN SOP
-- citations 表中会新增带 `ticket_id` 的记录
-
-### 11.8 验证权限过滤
-
-当前建议用角色和部门组合做基础验证。
-
-验证思路：
-
-1. 先上传一份 `department=IT`、`accessLevel=INTERNAL` 的文档
-2. 用 `support01` 或 `admin01` 检索，确认能搜到
-3. 再上传一份 `accessLevel=RESTRICTED` 的文档
-4. 用普通员工账号检索，预期搜不到
-5. 用 `support01` 或 `admin01` 检索，预期可搜到
-
-当前默认用户权限提醒：
-
-- `employee01` 部门是 `GENERAL`
-- `support01` 部门是 `IT`
-- 你上传 `department=IT` 的文档后，`employee01` 检索到空数组是正常行为，不是 citation 落库失败
-- 只有 `saveCitations=true` 且 `results` 非空时，`citations` 表才会新增记录
-
-如果你想新增一个受限文档，可先复制已有示例文件：
-
-```bash
-cp ./samples/knowledge/vpn_cert_sop.md ./samples/knowledge/vpn_restricted_runbook.md
-```
-
-再上传：
-
-```bash
-curl -X POST "$BASE_URL/api/documents/upload" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -F "file=@./samples/knowledge/vpn_restricted_runbook.md" \
-  -F "title=VPN 受限排障 Runbook" \
-  -F "category=VPN" \
-  -F "department=IT" \
-  -F "accessLevel=RESTRICTED" \
-  -F "version=v1.0" \
-  -F "updatedAt=2026-04-17T00:00:00Z"
-```
-
-员工检索：
-
-```bash
-curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $EMPLOYEE_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": "VPN Runbook 受限排障",
-    "category": "VPN",
-    "limit": 5
-  }'
-```
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/DocumentParserRegistry.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/MarkdownDocumentParser.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/TextDocumentParser.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/parser/PdfDocumentParser.java`
 
-支持人员检索：
+## 8. 其他 Thread 对齐规范
 
-```bash
-SUPPORT_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$SUPPORT_USERNAME\",
-    \"password\": \"$SUPPORT_PASSWORD\"
-  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+### 8.1 Thread 2：认证与权限
 
-curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $SUPPORT_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "query": "VPN Runbook 受限排障",
-    "category": "VPN",
-    "limit": 5
-  }'
-```
+Thread 2 需要继续保证：
 
-预期：
+- `UserContext` 可用。
+- `UserPrincipal.department` 可用。
+- 用户角色稳定。
 
-- 员工账号看不到 `RESTRICTED` 文档
-- 支持人员或管理员可以看到
+Thread 4 会直接复用这些上下文做文档列表和检索过滤。
 
-### 11.9 常见问题排查
+### 8.2 Thread 3：Ticket Core
 
-如果启动时报 Flyway migration 冲突，先执行：
+Thread 4 只读取 Ticket 信息：
 
-```bash
-cd backend
-mvn clean compile
-```
+- 通过 `TicketQueryService#getTicketDetail` 读取标题、描述、分类。
+- 不修改 ticket 状态。
+- 不写 `tickets`。
+- 不绕过 Ticket Core 写事件日志。
 
-如果数据库连接异常，先确认：
+Ticket Core 代码由对应 thread 修改，Thread 4 不直接实施。但目标契约必须统一到本标准类别，不能长期保留自由文本 category。
 
-```bash
-docker compose ps postgres
-docker exec -it enterprise-ai-ticketing-postgres \
-  psql -U ticketing -d ticketing -c 'select 1'
-```
+Thread 3 需要修改的具体部分：
 
-如果 Qdrant 未启动，先确认：
+- `CreateTicketRequest.category`：从自由文本 `String` 改为标准类别枚举或标准 code，只接受 `REMOTE_ACCESS` 等标准值。
+- `TicketListQuery.category`：从自由文本筛选改为标准类别筛选，非法值返回 400。
+- `TicketEntity.category`：数据库字段可继续 `varchar(128)`，但写入值必须是标准 code。
+- `TicketCoreServiceImpl#createTicket`：创建时不再 `trim()` 任意文本，而是校验并存储标准 code。
+- `TicketQueryServiceImpl`：列表查询按标准 code 精确匹配，不再做自由文本大小写兼容。
+- `TicketResponse.category`、`TicketSummaryResponse.category`：继续可序列化为字符串，但值必须是标准 code。
+- 历史 migration：新增 Ticket Core migration，将 `VPN`、`VPN_ISSUE` 映射到 `REMOTE_ACCESS`，`PASSWORD_RESET` 映射到 `PASSWORD_MFA`，`SOFTWARE_LICENSE` 映射到 `SOFTWARE_APPLICATION`，无法识别的旧值映射到 `OTHER`。
+- 测试：旧测试中的 `VPN`、`Finance`、`IT` 作为新建/筛选入参应改为标准 code，或改成非法值 400 测试。
 
-```bash
-docker compose ps qdrant
-curl http://localhost:6333/collections
-```
+### 8.3 Thread 5：AI 编排
 
-如果本地 embedding 服务未启动，先确认：
+Thread 5 是检索接口的主要下游。
 
-```bash
-curl http://127.0.0.1:11434/api/tags
-```
+推荐调用：
 
-如果切换 embedding 模型后报 Qdrant vector size mismatch，说明 collection 仍然保留旧维度。处理方式：
+- HTTP：`POST /api/retrieval/search`
+- Spring Service：注入 `RetrievalService`
 
-```bash
-curl -X DELETE http://127.0.0.1:6333/collections/knowledge_chunks
-```
+Thread 5 应消费的字段：
 
-然后重新上传文档建立新索引。
+- `ticketContext`
+- `diagnostics.retrievalMode`
+- `diagnostics.candidateCount`
+- `diagnostics.returnedCount`
+- `diagnostics.filterSummary`
+- `results[].retrievalScore`
+- `results[].rerankScore`
+- `results[].sourceRef`
+- `results[].metadataMap`
+- `results[].citationId`
 
-如果上传返回 403，检查是否使用了 `admin01` 登录。
+协作要求：
 
-如果检索返回空数组，优先检查：
+- AI 分类输出应直接使用标准 category code，例如 `REMOTE_ACCESS`、`PASSWORD_MFA`、`ACCESS_REQUEST`。
+- Retriever 不应长期维护 `AI category -> KB category` 的硬编码映射；标准化后应直接把 AI 分类结果作为检索 category filter。
+- 分类失败或不确定时，Thread 5 可选择输出 `OTHER`，或不传检索 category filter，让检索在权限范围内基于 `query` 和 `ticketContext` 召回。
+- 不要直接访问 `document_chunks` 拼接 AI 证据。
+- 不要自行判断 citation 是否越权。
+- 若要记录证据链，优先使用 `saveCitations=true`。
+- 若 `results` 为空，不要直接判定系统故障，应结合 `diagnostics` 和 HTTP 状态区分空命中与调用异常。
 
-- 文档是否已成功上传并 `INDEXED`
-- `category` 是否与上传元数据一致，例如 `VPN`
-- 当前账号角色是否具备对应 `accessLevel`
-- `department` 过滤是否超出当前用户范围
+### 8.4 前端
 
-## 12. 其他 thread 如何使用
+前端测试与使用应优先走页面流程。
 
-## 12.1 Thread 2：认证与权限
+前端需要对齐：
 
-Thread 2 无需改动知识模块，只需继续保证：
+- 上传页面的类别下拉框从 `GET /api/documents/categories` 获取。
+- 上传文档时只能提交标准 category code。
+- 工单创建/筛选页面后续也应改为标准类别下拉，不能继续使用自由文本输入。
+- 检索结果展示优先使用 `title`、`contentSnippet`、`sourceRef`、`metadataMap`。
+- Ticket 详情或 AI 运行记录如需展示证据链，应使用 citation 相关字段。
 
-- `UserContext` 可用
-- `UserPrincipal.department` 可用
-- 角色信息稳定
+## 9. 当前限制
 
-本模块会直接复用这些能力做访问过滤。
-
-## 12.2 Thread 3：Ticket Core
-
-Thread 3 只需要提供稳定只读能力即可。
-
-当前知识模块通过：
-
-- `TicketQueryService#getTicketDetail`
-
-读取工单标题、描述、分类来构造检索 query。
-
-协作规范：
-
-- 知识模块不会修改 ticket 状态
-- 不会直接写 `tickets`
-- 不会绕过 Ticket Core 改事件日志
-
-## 12.3 Thread 5：AI 编排
-
-这是最直接的下游调用方。
-
-推荐使用方式：
-
-### 方式 A：通过 HTTP
-
-调用：
-
-- `POST /api/retrieval/search`
-
-建议请求：
-
-```json
-{
-  "ticketId": 123,
-  "query": "VPN 证书失效 无法连接",
-  "ticketContext": "title: VPN 客户端提示证书失效; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired",
-  "category": "VPN",
-  "limit": 5,
-  "saveCitations": true,
-  "aiRunId": "run-xxx"
-}
-```
-
-说明：
-
-- `results` 可直接作为 AI 输入证据
-- `citationId` 与 `sourceRef` 可直接回填到 AI 运行记录或前端展示
-- 建议 Thread 5 不自行拼装权限过滤，而是直接复用本服务
-- 不建议 Thread 5 固定传 `department=requester.department`，否则会把支持人员本可读取的跨部门文档提前过滤掉
-- 当前 Thread 5 主链路已默认以 `saveCitations=true` 调用，便于 `sourceRef` 稳定返回 `citation:<id>`
-
-### 方式 B：通过 Spring Service
-
-可直接注入：
-
-```java
-private final RetrievalService retrievalService;
-```
-
-优点：
-
-- 直接复用统一 schema
-- 不重复实现向量检索与权限过滤
-
-### Thread 5 协作规范
-
-- 只消费检索结果，不在 AI 模块重复查询底层表
-- 不直接访问 `document_chunks` 拼返回
-- 不自行决定引用是否越权
-- 若要记录证据链，优先使用 `saveCitations=true`
-- 优先消费 `results[].retrievalScore`、`results[].rerankScore`、`results[].sourceRef`、`results[].metadataMap`
-- 同时消费 `diagnostics.retrievalMode`、`diagnostics.candidateCount`、`diagnostics.returnedCount`、`diagnostics.filterSummary`
-- 若 `results` 为空，不要直接判定系统故障，应结合 `diagnostics` 与 HTTP 状态区分“空命中”和“调用异常”
-
-## 12.4 前端或其他模块
-
-如果未来前端或 ticket 详情页需要展示证据，可直接使用：
-
-- `POST /api/retrieval/search`
-
-或者后续基于 `citations` 增加详情接口。
-
-## 13. 当前限制与后续建议
-
-当前限制：
-
-- 还没有接入真实 embedding 模型
-- citation 目前只实现落库，没有额外查询接口
-- 文档上传当前限制为 `ADMIN`
-- 尚未补自动化测试
-
-后续建议：
-
-1. 增加 citation 查询接口，供 ticket 详情直接读取
-2. 在本地 Ollama / 商用 OpenAI 之外继续扩展更多 embedding provider
-3. 增加批量导入和重建索引能力
-4. 增加文档删除、重传、版本管理接口
-5. 增加针对检索准确率和权限过滤的集成测试
-
-## 14. 总结
-
-当前 Thread 4 已提供一条完整、可编译的最小闭环：
-
-- 文档上传
-- 解析
-- 切分
-- embedding
-- Qdrant 写入
-- 检索
-- 元数据过滤
-- citation 落库
-
-该模块已经满足 MVP 中“给定工单内容，返回带来源的可过滤检索结果”的核心目标，并且保持了与 Ticket Core、权限模块、AI 模块之间的职责边界。
+- citation 已支持落库，但还没有单独的 citation 查询接口。
+- 文档上传当前限制为 `ADMIN`。
+- 当前是 vector search + metadata filter，hybrid recall 和 rerank 仍是后续演进方向。
+- 当前环境默认只支持一个活动 embedding 模型对应一个 Qdrant collection，不支持多模型共存。

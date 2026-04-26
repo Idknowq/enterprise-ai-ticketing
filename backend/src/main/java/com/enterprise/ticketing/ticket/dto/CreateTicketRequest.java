@@ -1,5 +1,6 @@
 package com.enterprise.ticketing.ticket.dto;
 
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.ticket.domain.TicketPriority;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -17,9 +18,8 @@ public record CreateTicketRequest(
         @Size(max = 5000)
         String description,
 
-        @Schema(description = "Optional category", example = "VPN")
-        @Size(max = 128)
-        String category,
+        @Schema(description = "Optional standardized ticket category code", example = "REMOTE_ACCESS")
+        KnowledgeDocumentCategory category,
 
         @Schema(description = "Ticket priority")
         TicketPriority priority

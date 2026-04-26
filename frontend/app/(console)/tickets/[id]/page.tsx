@@ -3,10 +3,11 @@
 import { useAuth } from "@/components/app-provider";
 import { InlineEmpty, PageError, PageLoading } from "@/components/page-state";
 import { PriorityTag, TicketStatusTag, ticketStatusOptions } from "@/components/status-tags";
+import { formatCategoryLabel } from "@/lib/categories";
 import { formatDateTime, formatRelative } from "@/lib/date";
 import { listTicketApprovals } from "@/lib/services/approvals";
 import { listTicketAiRuns, runTicketAi } from "@/lib/services/ai";
-import { searchKnowledge } from "@/lib/services/documents";
+import { listDocumentCategories, searchKnowledge } from "@/lib/services/documents";
 import {
   appendTicketComment,
   assignTicket,
@@ -17,6 +18,7 @@ import type {
   AiWorkflowRunResponse,
   RetrievalSearchResponse,
   ApprovalStageResponse,
+  DocumentCategoryOptionResponse,
   TicketDetailResponse,
   TicketStatus,
 } from "@/types/api";
@@ -140,6 +142,7 @@ export default function TicketDetailPage() {
   const [detail, setDetail] = useState<TicketDetailResponse | null>(null);
   const [aiRuns, setAiRuns] = useState<AiWorkflowRunResponse[]>([]);
   const [approvalStages, setApprovalStages] = useState<ApprovalStageResponse[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<DocumentCategoryOptionResponse[]>([]);
   const [retrieval, setRetrieval] = useState<RetrievalSearchResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +191,28 @@ export default function TicketDetailPage() {
       loadPage();
     }
   }, [ticketId, loadPage]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCategories() {
+      try {
+        const options = await listDocumentCategories();
+        if (active) {
+          setCategoryOptions(options);
+        }
+      } catch {
+        if (active) {
+          setCategoryOptions([]);
+        }
+      }
+    }
+
+    loadCategories();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleComment(values: { content: string }) {
     setCommentLoading(true);
@@ -336,7 +361,9 @@ export default function TicketDetailPage() {
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <Card className="page-card" title="基础信息">
             <Descriptions bordered column={2}>
-              <Descriptions.Item label="分类">{detail.ticket.category || "未分类"}</Descriptions.Item>
+              <Descriptions.Item label="分类">
+                {formatCategoryLabel(detail.ticket.category, categoryOptions)}
+              </Descriptions.Item>
               <Descriptions.Item label="状态">
                 <TicketStatusTag value={detail.ticket.status} />
               </Descriptions.Item>
@@ -468,7 +495,9 @@ export default function TicketDetailPage() {
                             <Descriptions.Item label="生成时间">
                               {formatDateTime(aiDecision.generatedAt)}
                             </Descriptions.Item>
-                            <Descriptions.Item label="分类">{aiDecision.category}</Descriptions.Item>
+                            <Descriptions.Item label="分类">
+                              {formatCategoryLabel(aiDecision.category, categoryOptions)}
+                            </Descriptions.Item>
                             <Descriptions.Item label="优先级">
                               <PriorityTag value={aiDecision.priority} />
                             </Descriptions.Item>
@@ -622,7 +651,8 @@ export default function TicketDetailPage() {
                                   <Space direction="vertical" size={2}>
                                     <Typography.Text>{item.contentSnippet}</Typography.Text>
                                     <Typography.Text type="secondary">
-                                      {item.metadata.category} / {item.metadata.department} / {item.metadata.version}
+                                      {formatCategoryLabel(item.metadata.category, categoryOptions)} /{" "}
+                                      {item.metadata.department} / {item.metadata.version}
                                     </Typography.Text>
                                   </Space>
                                 }
@@ -763,7 +793,9 @@ export default function TicketDetailPage() {
             {aiDecision ? (
               <Space direction="vertical" size="middle" style={{ width: "100%" }}>
                 <Descriptions column={1} size="small">
-                  <Descriptions.Item label="分类">{aiDecision.category}</Descriptions.Item>
+                  <Descriptions.Item label="分类">
+                    {formatCategoryLabel(aiDecision.category, categoryOptions)}
+                  </Descriptions.Item>
                   <Descriptions.Item label="置信度">
                     {(aiDecision.confidence * 100).toFixed(1)}%
                   </Descriptions.Item>

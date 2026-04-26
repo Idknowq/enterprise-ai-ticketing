@@ -17,11 +17,11 @@ class RuleBasedStructuredLlmProviderTest {
                 new AiClassificationInput(
                         "VPN 连接失败",
                         "我在家连接公司 VPN 失败，客户端提示证书失效。",
-                        null
+                        "REMOTE_ACCESS"
                 )
         );
 
-        assertThat(response.output().category()).isEqualTo("VPN_ISSUE");
+        assertThat(response.output().category()).isEqualTo("REMOTE_ACCESS");
         assertThat(response.providerType()).isEqualTo("rule-based");
         assertThat(response.output().priority()).isEqualTo(TicketPriority.MEDIUM);
         assertThat(response.output().confidence()).isBetween(0.4d, 0.7d);
@@ -66,7 +66,7 @@ class RuleBasedStructuredLlmProviderTest {
                                 0.95d,
                                 null,
                                 "kb://access/prod-log-approval",
-                                java.util.Map.of("category", "ACCESS")
+                                java.util.Map.of("category", "ACCESS_REQUEST")
                         ))
                 )
         );
@@ -83,7 +83,7 @@ class RuleBasedStructuredLlmProviderTest {
                 new AiResolutionInput(
                         "系统异常",
                         "打开页面后看起来不太对，请帮忙看看。",
-                        new AiClassificationOutput("GENERAL_IT_SUPPORT", TicketPriority.MEDIUM, 0.18d),
+                        new AiClassificationOutput("OTHER", TicketPriority.MEDIUM, 0.18d),
                         java.util.Map.of(),
                         List.of()
                 )

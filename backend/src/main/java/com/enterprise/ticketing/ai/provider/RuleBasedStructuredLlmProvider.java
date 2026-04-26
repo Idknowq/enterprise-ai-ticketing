@@ -1,4 +1,6 @@
 package com.enterprise.ticketing.ai.provider;
+
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.ticket.domain.TicketPriority;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,23 +30,32 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
     @Override
     public StructuredLlmResponse<AiClassificationOutput> classify(AiClassificationInput input) {
         String text = normalize(input.title()) + " " + normalize(input.description());
-        AiClassificationOutput output;
+        String category = resolveCanonicalCategory(input.existingCategory()).code();
+        TicketPriority priority;
+        double confidence;
         if (containsAny(text, "vpn", "证书", "certificate", "remote access")) {
-            output = new AiClassificationOutput("VPN_ISSUE", TicketPriority.MEDIUM, 0.58d);
+            priority = TicketPriority.MEDIUM;
+            confidence = 0.58d;
         } else if (containsAny(text, "password", "reset password", "forgot password", "密码")) {
-            output = new AiClassificationOutput("PASSWORD_RESET", TicketPriority.MEDIUM, 0.56d);
+            priority = TicketPriority.MEDIUM;
+            confidence = 0.56d;
         } else if (containsAny(text, "permission", "access", "权限", "只读", "read only", "生产环境", "prod")) {
-            TicketPriority priority = containsAny(text, "prod", "production", "线上", "紧急") ? TicketPriority.HIGH : TicketPriority.MEDIUM;
-            output = new AiClassificationOutput("ACCESS_REQUEST", priority, 0.6d);
+            priority = containsAny(text, "prod", "production", "线上", "紧急") ? TicketPriority.HIGH : TicketPriority.MEDIUM;
+            confidence = 0.6d;
         } else if (containsAny(text, "license", "授权", "office", "outlook", "teams")) {
-            output = new AiClassificationOutput("SOFTWARE_LICENSE", TicketPriority.MEDIUM, 0.46d);
+            priority = TicketPriority.MEDIUM;
+            confidence = 0.46d;
         } else if (containsAny(text, "laptop", "device", "设备", "电脑", "hardware")) {
-            output = new AiClassificationOutput("DEVICE_SUPPORT", TicketPriority.MEDIUM, 0.44d);
+            priority = TicketPriority.MEDIUM;
+            confidence = 0.44d;
         } else if (containsAny(text, "develop", "build", "deploy", "开发环境", "jenkins", "ide")) {
-            output = new AiClassificationOutput("DEV_ENV_ISSUE", TicketPriority.HIGH, 0.42d);
+            priority = TicketPriority.HIGH;
+            confidence = 0.42d;
         } else {
-            output = new AiClassificationOutput("GENERAL_IT_SUPPORT", TicketPriority.MEDIUM, 0.18d);
+            priority = TicketPriority.MEDIUM;
+            confidence = 0.18d;
         }
+        AiClassificationOutput output = new AiClassificationOutput(category, priority, confidence);
         return new StructuredLlmResponse<>(output, providerType(), defaultModelName(), estimateTokens(text), 32, false, null);
     }
 
@@ -100,12 +111,12 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
     }
 
     private void populateIssueType(String category, String text, Map<String, String> fields) {
-        if ("VPN_ISSUE".equals(category) && containsAny(text, "证书", "certificate")) {
+        if ("REMOTE_ACCESS".equals(category) && containsAny(text, "证书", "certificate")) {
             fields.put("issueType", "CERTIFICATE_RELATED");
             return;
         }
-        if ("PASSWORD_RESET".equals(category)) {
-            fields.put("issueType", "PASSWORD_RESET");
+        if ("PASSWORD_MFA".equals(category)) {
+            fields.put("issueType", "CREDENTIAL_OR_MFA_RELATED");
             return;
         }
         if ("ACCESS_REQUEST".equals(category)) {
@@ -159,7 +170,7 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
             actions.add("Check whether the issue is caused by a temporary network or input problem.");
             actions.add("Capture the exact error message or screenshot and provide it to the support team.");
             actions.add("Contact a support agent for manual triage.");
-        } else if ("VPN_ISSUE".equals(category)) {
+        } else if ("REMOTE_ACCESS".equals(category)) {
             actions.add("Check network connectivity and confirm the VPN client can reach the service endpoint.");
             actions.add("Verify account status and any recent credential or certificate changes.");
             actions.add("Provide the exact VPN error message or screenshot to the support team.");
@@ -167,7 +178,7 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
             actions.add("Confirm the requested resource scope and the business reason for access.");
             actions.add("Prepare approval context before any access change is made.");
             actions.add("Ask the support team to continue manual review of the request.");
-        } else if ("PASSWORD_RESET".equals(category)) {
+        } else if ("PASSWORD_MFA".equals(category)) {
             actions.add("Verify identity through the standard support process.");
             actions.add("Try the normal password reset path and confirm whether MFA also needs attention.");
             actions.add("Contact support if login still fails after reset.");
@@ -224,5 +235,12 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
             return 0;
         }
         return Math.max(16, (text.length() / 4) + 1);
+    }
+
+    private KnowledgeDocumentCategory resolveCanonicalCategory(String category) {
+        if (!StringUtils.hasText(category)) {
+            return KnowledgeDocumentCategory.OTHER;
+        }
+        return KnowledgeDocumentCategory.fromCode(category);
     }
 }

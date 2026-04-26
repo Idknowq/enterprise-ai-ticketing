@@ -3,6 +3,8 @@ package com.enterprise.ticketing.knowledge.controller;
 import com.enterprise.ticketing.common.api.OpenApiResultSchemas;
 import com.enterprise.ticketing.common.api.Result;
 import com.enterprise.ticketing.common.util.TraceIdUtils;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
+import com.enterprise.ticketing.knowledge.dto.DocumentCategoryOptionResponse;
 import com.enterprise.ticketing.knowledge.dto.DocumentListQuery;
 import com.enterprise.ticketing.knowledge.dto.DocumentListResponse;
 import com.enterprise.ticketing.knowledge.dto.DocumentResponse;
@@ -14,6 +16,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.Arrays;
+import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
@@ -48,5 +52,14 @@ public class DocumentController {
     @PreAuthorize("@roleChecker.hasAnyRole(authentication, 'ADMIN', 'SUPPORT_AGENT')")
     public Result<DocumentListResponse> listDocuments(@Valid @ModelAttribute DocumentListQuery query) {
         return Result.success(documentService.listDocuments(query), TraceIdUtils.currentTraceId());
+    }
+
+    @Operation(summary = "List document categories", description = "List standardized knowledge document category options.")
+    @GetMapping("/categories")
+    public Result<List<DocumentCategoryOptionResponse>> listCategories() {
+        List<DocumentCategoryOptionResponse> categories = Arrays.stream(KnowledgeDocumentCategory.options())
+                .map(DocumentCategoryOptionResponse::from)
+                .toList();
+        return Result.success(categories, TraceIdUtils.currentTraceId());
     }
 }

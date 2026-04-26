@@ -12,9 +12,6 @@ public class StructuredLlmOutputValidator {
         if (output == null) {
             throw new IllegalStateException("classification output is missing");
         }
-        if (!StringUtils.hasText(output.category())) {
-            throw new IllegalStateException("classification category is required");
-        }
         if (output.priority() == null) {
             throw new IllegalStateException("classification priority is required");
         }

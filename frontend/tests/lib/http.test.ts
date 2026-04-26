@@ -21,9 +21,9 @@ describe("http helpers", () => {
         size: 10,
         keyword: "",
         status: null,
-        category: "VPN",
+        category: "REMOTE_ACCESS",
       }),
-    ).toBe("?page=0&size=10&category=VPN");
+    ).toBe("?page=0&size=10&category=REMOTE_ACCESS");
   });
 
   it("sends bearer token and returns envelope data", async () => {

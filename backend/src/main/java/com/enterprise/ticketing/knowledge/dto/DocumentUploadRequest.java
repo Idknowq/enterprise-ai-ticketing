@@ -1,6 +1,7 @@
 package com.enterprise.ticketing.knowledge.dto;
 
 import com.enterprise.ticketing.knowledge.domain.KnowledgeAccessLevel;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -18,9 +19,9 @@ public class DocumentUploadRequest {
     @Schema(description = "Document title; defaults to filename when omitted")
     private String title;
 
-    @Schema(description = "Document category", example = "VPN")
-    @NotBlank(message = "category is required")
-    private String category;
+    @Schema(description = "Standard knowledge document category code", example = "REMOTE_ACCESS")
+    @NotNull(message = "category is required")
+    private KnowledgeDocumentCategory category;
 
     @Schema(description = "Owning department; defaults to GLOBAL when omitted", example = "IT")
     private String department;
@@ -54,11 +55,11 @@ public class DocumentUploadRequest {
         this.title = title;
     }
 
-    public String getCategory() {
+    public KnowledgeDocumentCategory getCategory() {
         return category;
     }
 
-    public void setCategory(String category) {
+    public void setCategory(KnowledgeDocumentCategory category) {
         this.category = category;
     }
 

@@ -8,12 +8,15 @@ import {
   accessLevelOptions,
   documentIndexStatusOptions,
 } from "@/components/status-tags";
+import { formatCategoryLabel, toCategorySelectOptions } from "@/lib/categories";
 import { formatDateTime } from "@/lib/date";
-import { listDocuments, uploadDocument } from "@/lib/services/documents";
+import { listDocumentCategories, listDocuments, uploadDocument } from "@/lib/services/documents";
 import type {
+  DocumentCategoryOptionResponse,
   DocumentListQuery,
   DocumentListResponse,
   DocumentUploadPayload,
+  KnowledgeDocumentCategory,
   KnowledgeAccessLevel,
 } from "@/types/api";
 import { InboxOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
@@ -47,6 +50,9 @@ export default function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [filters, setFilters] = useState<DocumentListQuery>({ page: 0, size: 10 });
   const [data, setData] = useState<DocumentListResponse | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<DocumentCategoryOptionResponse[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,9 +80,41 @@ export default function DocumentsPage() {
     }
   }, [canAccess, filters, loadDocuments]);
 
+  useEffect(() => {
+    if (!canAccess) {
+      return;
+    }
+
+    let active = true;
+
+    async function loadCategories() {
+      setCategoriesLoading(true);
+      setCategoryError(null);
+      try {
+        const options = await listDocumentCategories();
+        if (active) {
+          setCategoryOptions(options);
+        }
+      } catch (loadError) {
+        if (active) {
+          setCategoryError(loadError instanceof Error ? loadError.message : "标准分类加载失败");
+        }
+      } finally {
+        if (active) {
+          setCategoriesLoading(false);
+        }
+      }
+    }
+
+    loadCategories();
+    return () => {
+      active = false;
+    };
+  }, [canAccess]);
+
   async function handleUpload(values: {
     title?: string;
-    category: string;
+    category: KnowledgeDocumentCategory;
     department?: string;
     accessLevel: KnowledgeAccessLevel;
     version: string;
@@ -144,7 +182,15 @@ export default function DocumentsPage() {
             <Input allowClear placeholder="标题/文件名关键词" style={{ width: 220 }} />
           </Form.Item>
           <Form.Item name="category">
-            <Input allowClear placeholder="类别，例如 VPN" style={{ width: 160 }} />
+            <Select
+              allowClear
+              showSearch
+              loading={categoriesLoading}
+              optionFilterProp="label"
+              placeholder="标准分类"
+              style={{ width: 220 }}
+              options={toCategorySelectOptions(categoryOptions)}
+            />
           </Form.Item>
           <Form.Item name="department">
             <Input allowClear placeholder="部门，例如 IT" style={{ width: 140 }} />
@@ -208,9 +254,18 @@ export default function DocumentsPage() {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message="Embedding 模型路由由后端控制"
-          description="当前知识库索引已切换为本地 embedding 优先策略。前端仅负责上传与查询，不固定指定 provider，后续后端切换商用模型时无需调整当前页面交互。"
+          message="文档分类使用全局标准 IT 服务类别"
+          description="上传、筛选、工单和检索链路共用同一套 category code。Embedding 模型路由仍由后端控制，前端只提交标准分类 code。"
         />
+        {categoryError ? (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="标准分类加载失败"
+            description={categoryError}
+          />
+        ) : null}
         {!canUpload ? (
           <Typography.Paragraph type="secondary">
             当前账号可查看文档列表，但上传接口仅对管理员开放。
@@ -251,7 +306,8 @@ export default function DocumentsPage() {
             {
               title: "分类/部门",
               width: 180,
-              render: (_, record) => `${record.metadata.category} / ${record.metadata.department}`,
+              render: (_, record) =>
+                `${formatCategoryLabel(record.metadata.category, categoryOptions)} / ${record.metadata.department}`,
             },
             {
               title: "访问级别",
@@ -323,9 +379,15 @@ export default function DocumentsPage() {
           <Form.Item
             label="分类"
             name="category"
-            rules={[{ required: true, message: "请输入文档分类" }]}
+            rules={[{ required: true, message: "请选择文档分类" }]}
           >
-            <Input placeholder="例如：VPN / 权限 / 开发环境" />
+            <Select
+              showSearch
+              loading={categoriesLoading}
+              optionFilterProp="label"
+              placeholder="选择标准 IT 服务分类"
+              options={toCategorySelectOptions(categoryOptions)}
+            />
           </Form.Item>
           <Form.Item label="部门" name="department">
             <Input placeholder="例如：IT，默认可留空" />

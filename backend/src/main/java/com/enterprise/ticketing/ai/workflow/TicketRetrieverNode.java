@@ -6,6 +6,7 @@ import com.enterprise.ticketing.ai.dto.AiCitation;
 import com.enterprise.ticketing.ai.dto.AiRetrievalDiagnostics;
 import com.enterprise.ticketing.ai.service.impl.AiRunLogService;
 import com.enterprise.ticketing.config.ApplicationProperties;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchRequest;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchResponse;
 import com.enterprise.ticketing.knowledge.service.RetrievalService;
@@ -177,28 +178,12 @@ public class TicketRetrieverNode {
         return builder.toString().trim();
     }
 
-    private String resolveRetrievalCategory(AiWorkflowState state) {
-        Map<String, String> extractedFields = state.getExtractedFields();
-        String system = extractedFields == null ? null : extractedFields.get("system");
-        if (StringUtils.hasText(system)) {
-            return system.trim();
+    private KnowledgeDocumentCategory resolveRetrievalCategory(AiWorkflowState state) {
+        KnowledgeDocumentCategory category = KnowledgeDocumentCategory.fromCode(state.getClassification().category());
+        if (category == KnowledgeDocumentCategory.OTHER) {
+            return null;
         }
-
-        if (state.getTicket() != null && StringUtils.hasText(state.getTicket().category())) {
-            String ticketCategory = state.getTicket().category().trim();
-            if (!isGenericTicketCategory(ticketCategory)) {
-                return ticketCategory;
-            }
-        }
-        return null;
-    }
-
-    private boolean isGenericTicketCategory(String category) {
-        String normalized = category.trim().toUpperCase();
-        return "IT".equals(normalized)
-                || "GENERAL".equals(normalized)
-                || "GENERAL_IT_SUPPORT".equals(normalized)
-                || "SUPPORT".equals(normalized);
+        return category;
     }
 
     private String resolveSourceRef(Long documentId, String chunkId, String sourceRef, Long citationId) {

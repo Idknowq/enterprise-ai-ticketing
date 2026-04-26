@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import TicketDetailPage from "@/app/(console)/tickets/[id]/page";
 import { listTicketApprovals } from "@/lib/services/approvals";
 import { listTicketAiRuns, runTicketAi } from "@/lib/services/ai";
-import { searchKnowledge } from "@/lib/services/documents";
+import { listDocumentCategories, searchKnowledge } from "@/lib/services/documents";
 import {
   appendTicketComment,
   assignTicket,
@@ -38,6 +38,7 @@ vi.mock("@/lib/services/ai", () => ({
 }));
 
 vi.mock("@/lib/services/documents", () => ({
+  listDocumentCategories: vi.fn(),
   searchKnowledge: vi.fn(),
 }));
 
@@ -57,6 +58,14 @@ describe("TicketDetailPage", () => {
     vi.mocked(listTicketApprovals).mockReset();
     vi.mocked(listTicketAiRuns).mockReset();
     vi.mocked(runTicketAi).mockReset();
+    vi.mocked(listDocumentCategories).mockReset();
+    vi.mocked(listDocumentCategories).mockResolvedValue([
+      {
+        code: "REMOTE_ACCESS",
+        displayName: "远程访问 / VPN",
+        description: "VPN 证书失效、远程办公连接失败、客户端配置",
+      },
+    ]);
     vi.mocked(searchKnowledge).mockReset();
   });
 
@@ -93,7 +102,7 @@ function ticketDetail() {
       id: 101,
       title: "VPN certificate expired",
       description: "VPN client reports certificate expired.",
-      category: "VPN",
+      category: "REMOTE_ACCESS" as const,
       priority: "HIGH" as const,
       status: "OPEN" as const,
       requester: user(1, "employee01"),

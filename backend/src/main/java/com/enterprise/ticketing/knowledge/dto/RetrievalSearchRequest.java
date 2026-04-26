@@ -1,6 +1,7 @@
 package com.enterprise.ticketing.knowledge.dto;
 
 import com.enterprise.ticketing.knowledge.domain.KnowledgeAccessLevel;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -17,8 +18,8 @@ public class RetrievalSearchRequest {
     @Schema(description = "Optional AI-prepared ticket context used for downstream retrieval diagnostics or hybrid search orchestration")
     private String ticketContext;
 
-    @Schema(description = "Optional category filter", example = "VPN")
-    private String category;
+    @Schema(description = "Optional standard knowledge document category filter", example = "REMOTE_ACCESS")
+    private KnowledgeDocumentCategory category;
 
     @Schema(description = "Optional department filter", example = "IT")
     private String department;
@@ -53,7 +54,7 @@ public class RetrievalSearchRequest {
         this.ticketId = ticketId;
     }
 
-    public String getCategory() {
+    public KnowledgeDocumentCategory getCategory() {
         return category;
     }
 
@@ -65,7 +66,7 @@ public class RetrievalSearchRequest {
         this.ticketContext = ticketContext;
     }
 
-    public void setCategory(String category) {
+    public void setCategory(KnowledgeDocumentCategory category) {
         this.category = category;
     }
 

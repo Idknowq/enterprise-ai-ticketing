@@ -29,7 +29,8 @@ async function createApprovalTicket(page: Page, title: string, description: stri
   await page.getByRole("button", { name: "新建工单" }).click();
   await page.getByLabel("标题").fill(title);
   await page.getByLabel("描述").fill(description);
-  await page.getByLabel("分类").fill("ACCESS_REQUEST");
+  await page.getByLabel("分类").click();
+  await page.getByText("权限申请 (ACCESS_REQUEST)").last().click();
   await page.getByRole("button", { name: "提交工单" }).click();
 
   await page.waitForURL(/\/tickets\/\d+$/);
@@ -165,7 +166,8 @@ test("admin can upload and filter a knowledge document", async ({ page }) => {
   await expect(uploadDialog).toBeVisible();
   await uploadDialog.locator("input[type='file']").setInputFiles(documentFixturePath);
   await uploadDialog.getByLabel("标题").fill(documentTitle);
-  await uploadDialog.getByPlaceholder("例如：VPN / 权限 / 开发环境").fill("PLAYWRIGHT");
+  await uploadDialog.getByLabel("分类").click();
+  await page.getByText("通用 FAQ (GENERAL_FAQ)").last().click();
   await uploadDialog.getByPlaceholder("例如：IT，默认可留空").fill("QA");
   await uploadDialog.getByPlaceholder("例如：v1.0").fill("v2.0");
   await uploadDialog.getByRole("button", { name: "上传并索引" }).click();
@@ -177,7 +179,7 @@ test("admin can upload and filter a knowledge document", async ({ page }) => {
   const uploadedRow = page.locator("tr").filter({ hasText: documentTitle }).first();
   await expect(uploadedRow).toBeVisible({ timeout: 15_000 });
   await expect(uploadedRow).toContainText("knowledge-upload.txt");
-  await expect(uploadedRow).toContainText("PLAYWRIGHT / QA");
+  await expect(uploadedRow).toContainText("通用 FAQ (GENERAL_FAQ) / QA");
 
   await logout(page);
 });

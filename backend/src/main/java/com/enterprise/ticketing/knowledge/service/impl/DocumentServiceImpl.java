@@ -82,7 +82,7 @@ public class DocumentServiceImpl implements DocumentService {
         document.setSourceFilename(resolveFilename(file));
         document.setContentType(parsedDocument.contentType());
         document.setDocumentType(parsedDocument.documentType());
-        document.setCategory(documentAccessPolicy.normalizeCategory(request.getCategory()));
+        document.setCategory(request.getCategory().code());
         document.setDepartment(documentAccessPolicy.normalizeDepartment(request.getDepartment()));
         document.setAccessLevel(request.getAccessLevel());
         document.setVersion(request.getVersion().trim());

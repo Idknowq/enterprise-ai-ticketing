@@ -7,6 +7,7 @@ import com.enterprise.ticketing.common.error.ErrorCode;
 import com.enterprise.ticketing.common.exception.BusinessException;
 import com.enterprise.ticketing.config.ApplicationProperties;
 import com.enterprise.ticketing.knowledge.domain.KnowledgeAccessLevel;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import org.springframework.stereotype.Component;
@@ -75,7 +76,18 @@ public class DocumentAccessPolicy {
         return department.trim().toUpperCase();
     }
 
+    public String normalizeCategory(KnowledgeDocumentCategory category) {
+        return category == null ? null : category.code();
+    }
+
     public String normalizeCategory(String category) {
-        return category == null ? null : category.trim().toUpperCase();
+        if (!StringUtils.hasText(category)) {
+            return null;
+        }
+        try {
+            return KnowledgeDocumentCategory.fromCode(category).code();
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(ErrorCode.COMMON_BAD_REQUEST, exception.getMessage());
+        }
     }
 }

@@ -52,11 +52,13 @@
   - 状态 / 优先级 / 分类筛选
   - 新建工单
   - 跳转工单详情
+  - 分类筛选与新建工单使用后端标准 category code
 
 对应接口：
 
 - `GET /api/tickets`
 - `POST /api/tickets`
+- `GET /api/documents/categories`
 
 ### 3.3 工单详情页
 
@@ -107,11 +109,13 @@
   - 上传文档
   - 元数据筛选
   - 展示“embedding 由后端本地优先路由控制”的说明
+  - 分类筛选与上传文档使用后端标准 category code
 
 对应接口：
 
 - `GET /api/documents`
 - `POST /api/documents/upload`
+- `GET /api/documents/categories`
 
 ### 3.6 基础监控页
 
@@ -197,6 +201,7 @@
 
 ### 6.3 Thread 3 / 4 / 5 / 6 兼容点
 
+- thread4 已将 `category` 升级为全项目统一 IT 服务类别。前端通过 `GET /api/documents/categories` 获取选项，并在工单创建、工单筛选、文档上传、文档筛选中提交标准 code
 - thread5 扩展了 AI DTO，前端已同步兼容 `schemaVersion`、`providerType`、`modelName`、`analysisMode`、`fallbackUsed`、`fallbackReason`、`retrievalStatus`、`retrievalDiagnostics`
 - thread3 / thread6 调整了自动审批进入规则
   - `requiresApproval=true`
@@ -205,7 +210,7 @@
   - 且 `retrievalStatus` 不为 `ERROR / UNAVAILABLE`
   时，后端才会自动发起审批流
 - 若不满足上述条件，后端会写入 `AI_REVIEW_REQUIRED` 事件，前端在工单详情中提示人工复核，审批页不会出现该工单
-- thread4 的 embedding 模型路由由后端控制，当前为本地优先，前端不提供 provider 选择器
+- thread4 的 embedding 模型路由由后端控制，当前为本地优先，前端不提供 provider 选择器，也不再提供自由文本 category 输入
 
 ## 7. 本地启动
 
@@ -253,7 +258,7 @@ npm run dev
 推荐使用以下演示路径：
 
 1. 用 `employee01` 登录
-2. 创建权限申请类工单
+2. 创建分类为 `ACCESS_REQUEST` 的权限申请类工单
 3. 在工单详情触发 `运行 AI 分析`
 4. 若满足自动审批条件，工单进入 `WAITING_APPROVAL`；否则在时间线中显示 `AI_REVIEW_REQUIRED`
 5. 用 `approver01` 或 `admin01` 进入审批页处理

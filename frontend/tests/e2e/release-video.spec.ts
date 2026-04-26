@@ -22,7 +22,8 @@ test("records the MVP frontend release tour", async ({ page }) => {
   await page.getByRole("button", { name: "新建工单" }).click();
   await page.getByLabel("标题").fill(videoTicketTitle);
   await page.getByLabel("描述").fill(videoTicketDescription);
-  await page.getByLabel("分类").fill("ACCESS_REQUEST");
+  await page.getByLabel("分类").click();
+  await page.getByText("权限申请 (ACCESS_REQUEST)").last().click();
   await page.waitForTimeout(700);
   await page.getByRole("button", { name: "提交工单" }).click();
 

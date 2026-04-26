@@ -1,5 +1,6 @@
 package com.enterprise.ticketing.ticket.dto;
 
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.ticket.domain.TicketPriority;
 import com.enterprise.ticketing.ticket.domain.TicketStatus;
 import jakarta.validation.constraints.Max;
@@ -10,7 +11,7 @@ public class TicketListQuery {
     private String keyword;
     private TicketStatus status;
     private TicketPriority priority;
-    private String category;
+    private KnowledgeDocumentCategory category;
     private Long requesterId;
     private Long assigneeId;
 
@@ -48,11 +49,11 @@ public class TicketListQuery {
         this.priority = priority;
     }
 
-    public String getCategory() {
+    public KnowledgeDocumentCategory getCategory() {
         return category;
     }
 
-    public void setCategory(String category) {
+    public void setCategory(KnowledgeDocumentCategory category) {
         this.category = category;
     }
 

@@ -25,6 +25,27 @@ export type TicketEventType =
   | "APPROVAL_REJECTED";
 
 export type KnowledgeAccessLevel = "PUBLIC" | "INTERNAL" | "RESTRICTED" | "CONFIDENTIAL";
+export type KnowledgeDocumentCategory =
+  | "REMOTE_ACCESS"
+  | "IDENTITY_ACCOUNT"
+  | "PASSWORD_MFA"
+  | "ACCESS_REQUEST"
+  | "EMAIL_COLLABORATION"
+  | "DEVICE_HARDWARE"
+  | "OPERATING_SYSTEM"
+  | "SOFTWARE_APPLICATION"
+  | "NETWORK_CONNECTIVITY"
+  | "SECURITY_INCIDENT"
+  | "DATA_BACKUP_RECOVERY"
+  | "CLOUD_INFRASTRUCTURE"
+  | "DATABASE_DATA_PLATFORM"
+  | "DEV_ENGINEERING"
+  | "ITSM_PROCESS"
+  | "ASSET_PROCUREMENT"
+  | "CHANGE_RELEASE"
+  | "POLICY_COMPLIANCE"
+  | "GENERAL_FAQ"
+  | "OTHER";
 export type DocumentIndexStatus = "PENDING" | "INDEXED" | "FAILED";
 export type KnowledgeDocumentType = "MARKDOWN" | "PDF" | "TXT";
 export type AiRunStatus = "SUCCESS" | "FAILED";
@@ -71,7 +92,7 @@ export interface TicketResponse {
   id: number;
   title: string;
   description: string;
-  category: string | null;
+  category: KnowledgeDocumentCategory | null;
   priority: TicketPriority | null;
   status: TicketStatus;
   requester: TicketUserSummaryResponse;
@@ -106,7 +127,7 @@ export interface TicketDetailResponse {
 export interface TicketSummaryResponse {
   id: number;
   title: string;
-  category: string | null;
+  category: KnowledgeDocumentCategory | null;
   priority: TicketPriority | null;
   status: TicketStatus;
   requester: TicketUserSummaryResponse;
@@ -127,7 +148,7 @@ export interface TicketListQuery {
   keyword?: string;
   status?: TicketStatus;
   priority?: TicketPriority;
-  category?: string;
+  category?: KnowledgeDocumentCategory;
   requesterId?: number;
   assigneeId?: number;
   page?: number;
@@ -139,7 +160,7 @@ export interface TicketListQuery {
 export interface CreateTicketRequest {
   title: string;
   description: string;
-  category?: string;
+  category?: KnowledgeDocumentCategory;
   priority?: TicketPriority;
 }
 
@@ -160,7 +181,7 @@ export interface UpdateTicketStatusRequest {
 export interface DocumentMetadataResponse {
   docId: number;
   title: string;
-  category: string;
+  category: KnowledgeDocumentCategory;
   department: string;
   accessLevel: KnowledgeAccessLevel;
   version: string;
@@ -190,7 +211,7 @@ export interface DocumentListResponse {
 
 export interface DocumentListQuery {
   keyword?: string;
-  category?: string;
+  category?: KnowledgeDocumentCategory;
   department?: string;
   accessLevel?: KnowledgeAccessLevel;
   indexStatus?: DocumentIndexStatus;
@@ -201,7 +222,7 @@ export interface DocumentListQuery {
 export interface DocumentUploadPayload {
   file: File;
   title?: string;
-  category: string;
+  category: KnowledgeDocumentCategory;
   department?: string;
   accessLevel: KnowledgeAccessLevel;
   version: string;
@@ -212,7 +233,7 @@ export interface RetrievalSearchRequest {
   query?: string;
   ticketId?: number;
   ticketContext?: string;
-  category?: string;
+  category?: KnowledgeDocumentCategory;
   department?: string;
   accessLevel?: KnowledgeAccessLevel;
   limit?: number;
@@ -226,7 +247,11 @@ export interface RetrievalResultItemResponse {
   chunkId: string;
   contentSnippet: string;
   score: number;
+  retrievalScore?: number | null;
+  rerankScore?: number | null;
+  sourceRef?: string | null;
   metadata: DocumentMetadataResponse;
+  metadataMap?: Record<string, unknown> | null;
   whyMatched: string;
   citationId: number | null;
 }
@@ -234,7 +259,14 @@ export interface RetrievalResultItemResponse {
 export interface RetrievalSearchResponse {
   query: string;
   ticketId: number | null;
+  diagnostics?: AiRetrievalDiagnostics | null;
   results: RetrievalResultItemResponse[];
+}
+
+export interface DocumentCategoryOptionResponse {
+  code: KnowledgeDocumentCategory;
+  displayName: string;
+  description: string;
 }
 
 export interface AiCitation {
@@ -262,7 +294,7 @@ export interface AiDecisionResult {
   schemaVersion?: string | null;
   workflowId: string;
   ticketId: number;
-  category: string;
+  category: KnowledgeDocumentCategory;
   priority: TicketPriority | null;
   confidence: number;
   providerType?: string | null;

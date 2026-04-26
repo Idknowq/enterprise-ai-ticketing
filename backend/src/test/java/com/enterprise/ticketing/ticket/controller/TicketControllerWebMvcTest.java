@@ -1,6 +1,7 @@
 package com.enterprise.ticketing.ticket.controller;
 
 import com.enterprise.ticketing.auth.security.JwtAuthenticationFilter;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.ticket.domain.TicketPriority;
 import com.enterprise.ticketing.ticket.domain.TicketStatus;
 import com.enterprise.ticketing.ticket.dto.CreateTicketRequest;
@@ -76,7 +77,7 @@ class TicketControllerWebMvcTest {
         when(ticketService.createTicket(eq(new CreateTicketRequest(
                 "VPN certificate expired",
                 "VPN client reports certificate expired.",
-                "VPN",
+                KnowledgeDocumentCategory.REMOTE_ACCESS,
                 TicketPriority.HIGH
         )))).thenReturn(response);
 
@@ -86,7 +87,7 @@ class TicketControllerWebMvcTest {
                                 {
                                   "title": "VPN certificate expired",
                                   "description": "VPN client reports certificate expired.",
-                                  "category": "VPN",
+                                  "category": "REMOTE_ACCESS",
                                   "priority": "HIGH"
                                 }
                                 """))
@@ -106,7 +107,7 @@ class TicketControllerWebMvcTest {
                                 {
                                   "title": " ",
                                   "description": "",
-                                  "category": "VPN",
+                                  "category": "REMOTE_ACCESS",
                                   "priority": "HIGH"
                                 }
                                 """))
@@ -132,7 +133,7 @@ class TicketControllerWebMvcTest {
                         .param("keyword", "approval")
                         .param("status", "WAITING_APPROVAL")
                         .param("priority", "URGENT")
-                        .param("category", "Finance")
+                        .param("category", "ACCESS_REQUEST")
                         .param("requesterId", "7")
                         .param("assigneeId", "8")
                         .param("page", "1")
@@ -151,7 +152,7 @@ class TicketControllerWebMvcTest {
         assertEquals("approval", query.getKeyword());
         assertEquals(TicketStatus.WAITING_APPROVAL, query.getStatus());
         assertEquals(TicketPriority.URGENT, query.getPriority());
-        assertEquals("Finance", query.getCategory());
+        assertEquals(KnowledgeDocumentCategory.ACCESS_REQUEST, query.getCategory());
         assertEquals(7L, query.getRequesterId());
         assertEquals(8L, query.getAssigneeId());
         assertEquals(1, query.getPage());
@@ -245,7 +246,7 @@ class TicketControllerWebMvcTest {
                 id,
                 title,
                 "Description",
-                "VPN",
+                "REMOTE_ACCESS",
                 TicketPriority.HIGH,
                 status,
                 user(1L, "alice"),
@@ -259,7 +260,7 @@ class TicketControllerWebMvcTest {
         return new TicketSummaryResponse(
                 id,
                 title,
-                "Finance",
+                "ACCESS_REQUEST",
                 TicketPriority.URGENT,
                 status,
                 user(7L, "requester"),

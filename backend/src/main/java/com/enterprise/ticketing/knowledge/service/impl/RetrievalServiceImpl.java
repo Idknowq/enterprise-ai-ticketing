@@ -191,8 +191,8 @@ public class RetrievalServiceImpl implements RetrievalService {
             Set<String> departments
     ) {
         List<Map<String, Object>> must = new ArrayList<>();
-        if (StringUtils.hasText(request.getCategory())) {
-            must.add(qdrantClient.matchFilter("category", documentAccessPolicy.normalizeCategory(request.getCategory())));
+        if (request.getCategory() != null) {
+            must.add(qdrantClient.matchFilter("category", request.getCategory().code()));
         }
         if (!departments.isEmpty()) {
             must.add(qdrantClient.anyFilter("department", departments));
@@ -248,7 +248,7 @@ public class RetrievalServiceImpl implements RetrievalService {
             Set<String> departments
     ) {
         Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("category", StringUtils.hasText(request.getCategory()) ? documentAccessPolicy.normalizeCategory(request.getCategory()) : null);
+        summary.put("category", request.getCategory() == null ? null : request.getCategory().code());
         summary.put("departments", departments);
         summary.put("accessLevels", accessLevels.stream().map(Enum::name).toList());
         summary.put("ticketContextProvided", StringUtils.hasText(request.getTicketContext()));

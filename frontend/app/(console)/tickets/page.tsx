@@ -2,8 +2,18 @@
 
 import { PageError, PageLoading } from "@/components/page-state";
 import { PriorityTag, TicketStatusTag, priorityOptions, ticketStatusOptions } from "@/components/status-tags";
+import { formatCategoryLabel, toCategorySelectOptions } from "@/lib/categories";
+import { listDocumentCategories } from "@/lib/services/documents";
 import { createTicket, listTickets } from "@/lib/services/tickets";
-import type { CreateTicketRequest, TicketListQuery, TicketListResponse, TicketPriority, TicketStatus } from "@/types/api";
+import type {
+  CreateTicketRequest,
+  DocumentCategoryOptionResponse,
+  KnowledgeDocumentCategory,
+  TicketListQuery,
+  TicketListResponse,
+  TicketPriority,
+  TicketStatus,
+} from "@/types/api";
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { App, Button, Card, Drawer, Form, Input, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -16,7 +26,7 @@ type FilterValues = {
   keyword?: string;
   status?: TicketStatus;
   priority?: TicketPriority;
-  category?: string;
+  category?: KnowledgeDocumentCategory;
 };
 
 export default function TicketsPage() {
@@ -28,6 +38,8 @@ export default function TicketsPage() {
   const [createLoading, setCreateLoading] = useState(false);
   const [filters, setFilters] = useState<TicketListQuery>({ page: 0, size: 10 });
   const [data, setData] = useState<TicketListResponse | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<DocumentCategoryOptionResponse[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +59,31 @@ export default function TicketsPage() {
   useEffect(() => {
     loadTickets(filters);
   }, [filters, loadTickets]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCategories() {
+      setCategoriesLoading(true);
+      try {
+        const options = await listDocumentCategories();
+        if (active) {
+          setCategoryOptions(options);
+        }
+      } catch (loadError) {
+        message.warning(loadError instanceof Error ? loadError.message : "标准分类加载失败");
+      } finally {
+        if (active) {
+          setCategoriesLoading(false);
+        }
+      }
+    }
+
+    loadCategories();
+    return () => {
+      active = false;
+    };
+  }, [message]);
 
   function closeCreateDrawer() {
     createForm.resetFields();
@@ -82,7 +119,9 @@ export default function TicketsPage() {
       render: (_, record) => (
         <Space direction="vertical" size={2}>
           <Link href={`/tickets/${record.id}`}>{record.title}</Link>
-          <Typography.Text type="secondary">{record.category || "未分类"}</Typography.Text>
+          <Typography.Text type="secondary">
+            {formatCategoryLabel(record.category, categoryOptions)}
+          </Typography.Text>
         </Space>
       ),
     },
@@ -172,7 +211,15 @@ export default function TicketsPage() {
             </Select>
           </Form.Item>
           <Form.Item name="category">
-            <Input allowClear placeholder="分类，例如 VPN" style={{ width: 180 }} />
+            <Select
+              allowClear
+              showSearch
+              loading={categoriesLoading}
+              optionFilterProp="label"
+              placeholder="标准分类"
+              style={{ width: 220 }}
+              options={toCategorySelectOptions(categoryOptions)}
+            />
           </Form.Item>
           <Form.Item>
             <Space>
@@ -254,7 +301,14 @@ export default function TicketsPage() {
             />
           </Form.Item>
           <Form.Item label="分类" name="category">
-            <Input placeholder="例如：VPN / 权限申请 / 密码重置" maxLength={128} />
+            <Select
+              allowClear
+              showSearch
+              loading={categoriesLoading}
+              optionFilterProp="label"
+              placeholder="选择标准 IT 服务分类"
+              options={toCategorySelectOptions(categoryOptions)}
+            />
           </Form.Item>
           <Form.Item label="优先级" name="priority" initialValue="MEDIUM">
             <Select>

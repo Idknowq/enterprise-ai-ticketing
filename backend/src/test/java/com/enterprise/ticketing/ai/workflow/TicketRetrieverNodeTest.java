@@ -4,6 +4,7 @@ import com.enterprise.ticketing.ai.domain.AiRetrievalStatus;
 import com.enterprise.ticketing.ai.provider.AiClassificationOutput;
 import com.enterprise.ticketing.ai.service.impl.AiRunLogService;
 import com.enterprise.ticketing.config.ApplicationProperties;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.knowledge.dto.RetrievalDiagnosticsResponse;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchRequest;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchResponse;
@@ -38,7 +39,7 @@ class TicketRetrieverNodeTest {
                         "HYBRID_CANDIDATES_WITH_RERANK",
                         12,
                         0,
-                        Map.of("category", "VPN")
+                        Map.of("category", "REMOTE_ACCESS")
                 ),
                 List.of()
         ));
@@ -54,7 +55,7 @@ class TicketRetrieverNodeTest {
         assertThat(state.getCitations()).isEmpty();
         assertThat(state.getRetrievalStatus()).isEqualTo(AiRetrievalStatus.EMPTY);
         assertThat(state.getRetrievalDiagnostics().retrievalMode()).isEqualTo("HYBRID_CANDIDATES_WITH_RERANK");
-        assertThat(state.getRetrievalDiagnostics().filterSummary()).containsEntry("category", "VPN");
+        assertThat(state.getRetrievalDiagnostics().filterSummary()).containsEntry("category", "REMOTE_ACCESS");
     }
 
     @Test
@@ -76,7 +77,7 @@ class TicketRetrieverNodeTest {
     }
 
     @Test
-    void doesNotInferRetrievalCategoryFromAiCategoryWhenRealFieldsAreMissing() {
+    void skipsRetrievalCategoryWhenCanonicalCategoryIsOther() {
         RetrievalService retrievalService = mock(RetrievalService.class);
         when(retrievalService.search(any())).thenReturn(new RetrievalSearchResponse(
                 "VPN 连接失败 证书失效",
@@ -92,11 +93,36 @@ class TicketRetrieverNodeTest {
 
         AiWorkflowState state = workflowState();
         state.setExtractedFields(Map.of());
+        state.setClassification(new AiClassificationOutput("OTHER", TicketPriority.MEDIUM, 0.74d));
         node.execute(state);
 
         var requestCaptor = forClass(RetrievalSearchRequest.class);
         verify(retrievalService).search(requestCaptor.capture());
         assertThat(requestCaptor.getValue().getCategory()).isNull();
+    }
+
+    @Test
+    void usesCanonicalClassificationCategoryWithoutMappingHints() {
+        RetrievalService retrievalService = mock(RetrievalService.class);
+        when(retrievalService.search(any())).thenReturn(new RetrievalSearchResponse(
+                "VPN 连接失败 证书失效",
+                4L,
+                new RetrievalDiagnosticsResponse("VECTOR_WITH_METADATA_FILTERS", 0, 0, Map.of()),
+                List.of()
+        ));
+        TicketRetrieverNode node = new TicketRetrieverNode(
+                providerOf(retrievalService),
+                applicationProperties(),
+                mock(AiRunLogService.class)
+        );
+
+        AiWorkflowState state = workflowState();
+        state.setExtractedFields(Map.of("system", "VPN", "issueType", "CERTIFICATE_RELATED"));
+        node.execute(state);
+
+        var requestCaptor = forClass(RetrievalSearchRequest.class);
+        verify(retrievalService).search(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getCategory()).isEqualTo(KnowledgeDocumentCategory.REMOTE_ACCESS);
     }
 
     private AiWorkflowState workflowState() {
@@ -106,7 +132,7 @@ class TicketRetrieverNodeTest {
                         4L,
                         "VPN 连接失败",
                         "客户端提示证书失效",
-                        "IT",
+                        "REMOTE_ACCESS",
                         TicketPriority.MEDIUM,
                         TicketStatus.OPEN,
                         new TicketUserSummaryResponse(1L, "support01", "Support", "IT"),
@@ -115,8 +141,8 @@ class TicketRetrieverNodeTest {
                         Instant.parse("2026-04-24T10:00:00Z")
                 )
         );
-        state.setClassification(new AiClassificationOutput("VPN_ISSUE", TicketPriority.MEDIUM, 0.94d));
-        state.setExtractedFields(Map.of("system", "VPN", "issueType", "CERTIFICATE_EXPIRED"));
+        state.setClassification(new AiClassificationOutput("REMOTE_ACCESS", TicketPriority.MEDIUM, 0.94d));
+        state.setExtractedFields(Map.of("system", "VPN", "issueType", "CERTIFICATE_RELATED"));
         return state;
     }
 

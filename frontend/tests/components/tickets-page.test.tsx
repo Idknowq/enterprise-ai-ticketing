@@ -2,6 +2,7 @@ import { App as AntApp } from "antd";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import TicketsPage from "@/app/(console)/tickets/page";
+import { listDocumentCategories } from "@/lib/services/documents";
 import { createTicket, listTickets } from "@/lib/services/tickets";
 
 const push = vi.fn();
@@ -15,9 +16,21 @@ vi.mock("@/lib/services/tickets", () => ({
   createTicket: vi.fn(),
 }));
 
+vi.mock("@/lib/services/documents", () => ({
+  listDocumentCategories: vi.fn(),
+}));
+
 describe("TicketsPage", () => {
   beforeEach(() => {
     push.mockReset();
+    vi.mocked(listDocumentCategories).mockReset();
+    vi.mocked(listDocumentCategories).mockResolvedValue([
+      {
+        code: "REMOTE_ACCESS",
+        displayName: "远程访问 / VPN",
+        description: "VPN 证书失效、远程办公连接失败、客户端配置",
+      },
+    ]);
     vi.mocked(listTickets).mockReset();
     vi.mocked(createTicket).mockReset();
   });
@@ -66,16 +79,12 @@ describe("TicketsPage", () => {
     fireEvent.change(screen.getByPlaceholderText("请填写问题现象、影响范围、复现时间、已尝试动作等"), {
       target: { value: "VPN client reports certificate expired." },
     });
-    fireEvent.change(screen.getByPlaceholderText("例如：VPN / 权限申请 / 密码重置"), {
-      target: { value: "VPN" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "提交工单" }));
 
     await waitFor(() => {
       expect(createTicket).toHaveBeenCalledWith({
         title: "VPN certificate expired",
         description: "VPN client reports certificate expired.",
-        category: "VPN",
         priority: "MEDIUM",
       });
       expect(push).toHaveBeenCalledWith("/tickets/202");
@@ -87,7 +96,7 @@ function ticketSummary() {
   return {
     id: 101,
     title: "VPN certificate expired",
-    category: "VPN",
+    category: "REMOTE_ACCESS" as const,
     priority: "HIGH" as const,
     status: "OPEN" as const,
     requester: user(1, "alice"),
@@ -102,7 +111,7 @@ function ticketResponse(id: number) {
     id,
     title: "VPN certificate expired",
     description: "VPN client reports certificate expired.",
-    category: "VPN",
+    category: "REMOTE_ACCESS" as const,
     priority: "MEDIUM" as const,
     status: "OPEN" as const,
     requester: user(1, "alice"),

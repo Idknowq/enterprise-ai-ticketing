@@ -2,6 +2,7 @@ package com.enterprise.ticketing.knowledge.dto;
 
 import com.enterprise.ticketing.knowledge.domain.DocumentIndexStatus;
 import com.enterprise.ticketing.knowledge.domain.KnowledgeAccessLevel;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -10,7 +11,10 @@ import jakarta.validation.constraints.Min;
 public class DocumentListQuery {
 
     private String keyword;
-    private String category;
+
+    @Schema(description = "Optional standard knowledge document category filter", example = "REMOTE_ACCESS")
+    private KnowledgeDocumentCategory category;
+
     private String department;
     private KnowledgeAccessLevel accessLevel;
     private DocumentIndexStatus indexStatus;
@@ -30,11 +34,11 @@ public class DocumentListQuery {
         this.keyword = keyword;
     }
 
-    public String getCategory() {
+    public KnowledgeDocumentCategory getCategory() {
         return category;
     }
 
-    public void setCategory(String category) {
+    public void setCategory(KnowledgeDocumentCategory category) {
         this.category = category;
     }
 

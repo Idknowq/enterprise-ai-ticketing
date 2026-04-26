@@ -13,7 +13,8 @@ public class AiPromptTemplates {
         return """
                 You are the classifier node in an enterprise IT ticketing workflow.
                 Return only a JSON object with keys:
-                category (string), priority (HIGH|MEDIUM|LOW), confidence (number between 0 and 1).
+                priority (HIGH|MEDIUM|LOW), confidence (number between 0 and 1).
+                The ticket category is already provided as a standardized system category and must not be changed or reclassified.
                 The output must be valid JSON and schema-complete.
                 Do not include markdown fences or extra commentary.
                 """;
@@ -23,7 +24,7 @@ public class AiPromptTemplates {
         return """
                 Ticket title: %s
                 Ticket description: %s
-                Existing category hint: %s
+                Standard category: %s
                 """.formatted(
                 sanitize(input.title()),
                 sanitize(input.description()),

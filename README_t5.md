@@ -1,6 +1,6 @@
 # AI 编排模块说明
 
-本文档用于说明当前仓库中 Thread 5 交付的 AI 编排模块的设计边界、使用方式、验证方法，以及其他 thread 如何通过稳定契约接入 AI 结果。
+本文档用于说明当前仓库中 Thread 5 交付的 AI 编排模块的设计边界、基础接口，以及其他 thread 如何通过稳定契约接入 AI 结果。
 
 ## 1. 模块目标
 
@@ -35,7 +35,7 @@
 当前主链路由 `AiOrchestrationService.runForTicket(ticketId)` 驱动，按以下顺序执行：
 
 1. 读取工单详情
-2. 分类节点输出 `category / priority / confidence`
+2. 校验工单标准 `category`，分类节点只输出 `priority / confidence`
 3. 字段抽取节点输出 `extractedFields`
 4. 检索节点调用 `RetrievalService`
 5. 处理建议节点基于 citations 和 extracted fields 输出审批判断、人工接管判断、草稿回复和建议动作
@@ -53,13 +53,14 @@
 
 职责：
 
-- 基于工单标题和描述做分类
+- 校验并沿用 Ticket Core 提供的标准 `category`
 - 输出工单优先级
 - 输出置信度
+- 不允许 LLM、local model 或 rule-based 改写 category
 
 输出字段：
 
-- `category`
+- `category`：来自 `ticket.category` 的标准 code
 - `priority`
 - `confidence`
 
@@ -71,8 +72,9 @@
 
 职责：
 
-- 基于工单内容和分类结果抽取结构化字段
+- 基于工单内容和标准 category 抽取结构化字段
 - 输出扁平 key-value 字段集合
+- 不允许产出或覆盖 category
 
 示例字段：
 
@@ -136,7 +138,7 @@
   "schemaVersion": "v2",
   "workflowId": "ai-7a2c...",
   "ticketId": 123,
-  "category": "VPN_ISSUE",
+  "category": "REMOTE_ACCESS",
   "priority": "MEDIUM",
   "confidence": 0.82,
   "providerType": "deepseek",
@@ -146,7 +148,7 @@
   "fallbackReason": null,
   "requiresApproval": false,
   "needsHumanHandoff": false,
-  "draftReply": "AI triage suggests category VPN_ISSUE...",
+  "draftReply": "AI triage suggests next steps for the standardized category REMOTE_ACCESS...",
   "suggestedActions": [
     "Verify whether the local VPN certificate or token has expired."
   ],
@@ -166,7 +168,7 @@
       "rerankScore": 0.91,
       "sourceRef": "citation:1001",
       "metadata": {
-        "category": "VPN",
+        "category": "REMOTE_ACCESS",
         "department": "GLOBAL"
       }
     }
@@ -177,7 +179,7 @@
     "candidateCount": 24,
     "returnedCount": 4,
     "filterSummary": {
-      "category": "VPN",
+      "category": "REMOTE_ACCESS",
       "departments": ["GLOBAL", "IT"]
     },
     "message": "Retrieval completed successfully"
@@ -278,11 +280,12 @@ migration 文件：
 当前路由策略：
 
 - `Classifier / Extractor / Resolution` 优先调用 DeepSeek
+- `Classifier` 的 category 不由模型决定，模型返回的 category 会被标准 `ticket.category` 覆盖
 - 若本地模型已启用，则在 DeepSeek 失败后优先切到 `LocalStructuredLlmProvider`
 - 模型返回非法 JSON 或缺字段时会执行有限重试
 - 远端和本地模型都失败时才会回退到 `rule-based`
 - 回退会写入 `ai_runs`，并回传 `fallbackUsed / fallbackReason`
-- `rule-based` 不返回伪 citations，只输出保守的关键词通用建议
+- `rule-based` 不返回伪 citations，不输出旧分类名，只沿用标准 category 并输出保守的关键词通用建议
 
 ## 8. 配置项
 
@@ -375,172 +378,25 @@ Authorization: Bearer <token>
 
 - `backend/src/main/java/com/enterprise/ticketing/ai/controller/AiDebugController.java`
 
-## 10. 如何使用
+## 10. 前端验证
 
-### 10.1 启动前准备
+当前使用与验证优先通过前端页面完成。前端可创建或选择已有工单，触发 AI 分析，并查看最终决策结果、引用、节点运行记录和 fallback 状态。
 
-确保以下基础设施可用：
+后端只保留基础接口契约；不在本文档维护 curl、SQL 或本地启动脚本。
 
-- PostgreSQL
-- 认证模块
-- Ticket Core 模块
+## 11. 其他 thread 如何使用
 
-如果本地使用仓库默认方式，可在项目根目录执行：
-
-```bash
-docker compose up -d
-```
-
-再启动后端：
-
-```bash
-cd backend
-mvn spring-boot:run
-```
-
-### 10.2 准备测试数据
-
-1. 使用 Thread 2 的账号登录
-2. 使用 Thread 3 的接口创建工单
-3. 调用 AI 调试接口执行主链路
-
-### 10.3 登录并获取 token
-
-```bash
-BASE_URL='http://localhost:8080'
-USERNAME='support01'
-PASSWORD='ChangeMe123!'
-
-TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"username\": \"$USERNAME\",
-    \"password\": \"$PASSWORD\"
-  }" | jq -r '.data.accessToken')
-```
-
-### 10.4 创建测试工单
-
-```bash
-TICKET_ID=$(curl -s -X POST "$BASE_URL/api/tickets" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "title": "VPN 连接失败",
-    "description": "我在家连接公司 VPN 失败，客户端提示证书失效。",
-    "category": "IT",
-    "priority": "MEDIUM"
-  }' | jq -r '.data.id')
-```
-
-### 10.5 运行 AI 主链路
-
-```bash
-curl -X POST "$BASE_URL/api/ai/tickets/$TICKET_ID/run" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-预期：
-
-- 返回 `category`
-- 返回 `priority`
-- 返回 `confidence`
-- 返回 `extractedFields`
-- 返回 `citations`
-- 返回 `providerType / modelName`
-- 返回 `analysisMode`
-- 返回 `fallbackUsed / fallbackReason`
-- 返回 `retrievalStatus / retrievalDiagnostics`
-- 返回 `suggestedActions`
-- 返回 `requiresApproval`
-- 返回 `needsHumanHandoff`
-
-### 10.6 查询运行记录
-
-```bash
-curl "$BASE_URL/api/ai/tickets/$TICKET_ID/runs" \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-预期：
-
-- 至少能看到一次 `workflowId`
-- 节点列表包含：
-  - `CLASSIFIER`
-  - `EXTRACTOR`
-  - `RETRIEVER`
-  - `RESOLUTION`
-  - `ORCHESTRATION`
-
-## 11. 如何验证
-
-### 11.1 编译与单测
-
-进入后端目录执行：
-
-```bash
-cd backend
-mvn test
-```
-
-当前已覆盖的单测：
-
-- VPN 分类
-- 权限申请字段抽取
-- 需要审批场景的建议生成
-- 远端模型失败后切到本地模型
-- LLM primary provider 回退与重试
-- Retriever 空结果 / 异常的显式状态
-- Retriever 不再从 AI 分类反推检索 category
-
-测试位置：
-
-- `backend/src/test/java/com/enterprise/ticketing/ai/provider/RuleBasedStructuredLlmProviderTest.java`
-
-### 11.2 手工验收项
-
-建议按以下验收：
-
-1. 输入 `ticketId` 能跑通完整 AI 主链路
-2. 能返回结构化分类结果
-3. 能返回结构化字段抽取结果
-4. 能返回 citations
-5. citations 为空时能区分 `EMPTY / ERROR / UNAVAILABLE`
-6. 能返回处理建议和草稿回复
-7. 能判断是否需要审批
-8. 能判断是否需要人工接管
-9. 每次执行都能在 `ai_runs` 中追踪
-10. 发生 fallback 时能在返回值和 `ai_runs` 中看到原因
-
-### 11.3 数据库验证
-
-可直接在 PostgreSQL 中检查：
-
-```sql
-select id, ticket_id, workflow_id, node_name, status, provider_type, model_name, fallback_used, retrieval_status, created_at
-from ai_runs
-order by id desc;
-```
-
-预期：
-
-- 同一次执行会有多个相同 `workflow_id` 的节点记录
-- 每个节点有明确的 `node_name`
-- 可区分 LLM provider 与 retrieval 状态
-- 失败时会记录 `error_message`
-
-## 12. 其他 thread 如何使用
-
-### 12.1 Thread 3：Ticket Core
+### 11.1 Thread 3：Ticket Core
 
 建议方式：
 
 - 使用 `AiOrchestrationService.runForTicket(ticketId)` 获取结构化结果
 - 根据 `AiDecisionResult` 再决定是否调用 Ticket Core service 做状态变化
+- `ticket.category` 必须提前写入全项目标准 category code
 
 可以使用的结果字段：
 
-- `category`
+- `category`：标准 category code，直接来自 Ticket Core
 - `priority`
 - `analysisMode`
 - `requiresApproval`
@@ -552,8 +408,9 @@ order by id desc;
 
 - 不要让 AI 模块直接改 `tickets.status`
 - 不要绕过 `TicketService`
+- 不要把旧自由文本 category 传给 AI，例如 `VPN`、`IT`、`Finance`
 
-### 12.2 Thread 4：Knowledge / Retrieval
+### 11.2 Thread 4：Knowledge / Retrieval
 
 建议方式：
 
@@ -566,7 +423,7 @@ order by id desc;
 - `query`
 - `ticketId`
 - `ticketContext`
-- `category`
+- `category`：仅标准 code；`OTHER` 时不传 category filter
 - `department`
 - `limit`
 - `aiRunId`
@@ -591,9 +448,9 @@ order by id desc;
 
 - 不要在 RetrievalService 中做审批判断
 - 不要直接写 Ticket 状态
-- 不要要求 Thread 5 在编排层维护 `AI category -> KB category` 的硬编码映射
+- 不要要求 Thread 5 在编排层维护旧值映射或 `AI category -> KB category` 的硬编码映射
 
-### 12.3 Thread 6：Workflow / Approval / Observability
+### 11.3 Thread 6：Workflow / Approval / Observability
 
 建议方式：
 
@@ -614,7 +471,7 @@ order by id desc;
 - 不要假设 AI 已经修改过工单状态
 - 不要直接依赖 `draftReply` 文本做核心后端逻辑
 
-### 12.4 Thread 7：前端
+### 11.4 Thread 7：前端
 
 当前前端可以直接对接：
 
@@ -631,7 +488,7 @@ order by id desc;
 - 引用来源
 - 节点级执行时间和状态
 
-## 13. 协作规范
+## 12. 协作规范
 
 - AI 输出必须只作为结构化决策输入，不是最终业务动作
 - 其他模块消费 AI 结果时，应优先依赖字段而不是文案
@@ -641,7 +498,7 @@ order by id desc;
 - 其他 thread 应优先消费 `retrievalStatus / retrievalDiagnostics / fallbackUsed`，不要把空 citations 误判为“AI 未运行”
 - `analysisMode=RULE_BASED` 表示当前结果来自关键词兜底，只应视为低可信保守建议
 
-## 14. 当前限制与后续扩展点
+## 13. 当前限制与后续扩展点
 
 当前实现刻意保持 MVP 范围，以下内容可由后续迭代补充：
 

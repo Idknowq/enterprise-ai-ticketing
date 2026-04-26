@@ -6,6 +6,7 @@ import com.enterprise.ticketing.ai.provider.AiClassificationOutput;
 import com.enterprise.ticketing.ai.provider.LlmProviderRouter;
 import com.enterprise.ticketing.ai.provider.StructuredLlmResponse;
 import com.enterprise.ticketing.ai.service.impl.AiRunLogService;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import java.time.Duration;
 import org.springframework.stereotype.Component;
 
@@ -23,14 +24,20 @@ public class TicketClassifierNode {
     public void execute(AiWorkflowState state) {
         long startedAt = System.nanoTime();
         try {
+            KnowledgeDocumentCategory canonicalCategory = KnowledgeDocumentCategory.fromCode(state.getTicket().category());
             StructuredLlmResponse<AiClassificationOutput> response = llmProviderRouter.classify(
                     new AiClassificationInput(
                             state.getTicket().title(),
                             state.getTicket().description(),
-                            state.getTicket().category()
+                            canonicalCategory.code()
                     )
             );
-            state.setClassification(response.output());
+            AiClassificationOutput canonicalOutput = new AiClassificationOutput(
+                    canonicalCategory.code(),
+                    response.output().priority(),
+                    response.output().confidence()
+            );
+            state.setClassification(canonicalOutput);
             state.putNodeExecutionDetails(
                     AiNodeName.CLASSIFIER,
                     new AiNodeExecutionDetails(
@@ -54,8 +61,8 @@ public class TicketClassifierNode {
                     response.fallbackUsed(),
                     response.fallbackReason(),
                     null,
-                    "Category=" + response.output().category() + ", priority=" + response.output().priority(),
-                    response.output()
+                    "Category=" + canonicalOutput.category() + ", priority=" + canonicalOutput.priority(),
+                    canonicalOutput
             );
         } catch (RuntimeException exception) {
             aiRunLogService.recordFailure(

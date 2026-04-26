@@ -3,6 +3,7 @@ package com.enterprise.ticketing.knowledge.controller;
 import com.enterprise.ticketing.auth.security.JwtAuthenticationFilter;
 import com.enterprise.ticketing.knowledge.domain.DocumentIndexStatus;
 import com.enterprise.ticketing.knowledge.domain.KnowledgeAccessLevel;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentType;
 import com.enterprise.ticketing.knowledge.dto.DocumentListQuery;
 import com.enterprise.ticketing.knowledge.dto.DocumentListResponse;
@@ -68,7 +69,7 @@ class DocumentControllerWebMvcTest {
 
         mockMvc.perform(MockMvcRequestBuilders.get("/api/documents")
                         .param("keyword", "vpn")
-                        .param("category", "VPN")
+                        .param("category", "REMOTE_ACCESS")
                         .param("department", "IT")
                         .param("accessLevel", "INTERNAL")
                         .param("indexStatus", "INDEXED")
@@ -85,7 +86,7 @@ class DocumentControllerWebMvcTest {
         verify(documentService).listDocuments(queryCaptor.capture());
         DocumentListQuery query = queryCaptor.getValue();
         assertEquals("vpn", query.getKeyword());
-        assertEquals("VPN", query.getCategory());
+        assertEquals(KnowledgeDocumentCategory.REMOTE_ACCESS, query.getCategory());
         assertEquals("IT", query.getDepartment());
         assertEquals(KnowledgeAccessLevel.INTERNAL, query.getAccessLevel());
         assertEquals(DocumentIndexStatus.INDEXED, query.getIndexStatus());
@@ -108,7 +109,7 @@ class DocumentControllerWebMvcTest {
         mockMvc.perform(MockMvcRequestBuilders.multipart("/api/documents/upload")
                         .file(file)
                         .param("title", "VPN Runbook")
-                        .param("category", "VPN")
+                        .param("category", "REMOTE_ACCESS")
                         .param("department", "IT")
                         .param("accessLevel", "INTERNAL")
                         .param("version", "v1.0")
@@ -124,7 +125,7 @@ class DocumentControllerWebMvcTest {
         DocumentUploadRequest request = requestCaptor.getValue();
         assertEquals("vpn-runbook.txt", request.getFile().getOriginalFilename());
         assertEquals("VPN Runbook", request.getTitle());
-        assertEquals("VPN", request.getCategory());
+        assertEquals(KnowledgeDocumentCategory.REMOTE_ACCESS, request.getCategory());
         assertEquals("IT", request.getDepartment());
         assertEquals(KnowledgeAccessLevel.INTERNAL, request.getAccessLevel());
         assertEquals("v1.0", request.getVersion());
@@ -143,6 +144,46 @@ class DocumentControllerWebMvcTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.data.accessLevel").value("accessLevel is required"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.data.version").value("version is required"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.data.updatedAt").value("updatedAt is required"));
+    }
+
+    @Test
+    void listCategoriesReturnsStandardizedOptions() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/documents/categories"))
+                .andExpect(MockMvcResultMatchers.status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.success").value(true))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.data[0].code").value("REMOTE_ACCESS"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.data[0].displayName").value("远程访问 / VPN"));
+    }
+
+    @Test
+    void uploadDocumentRejectsLegacyCategory() throws Exception {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "vpn-runbook.txt",
+                MediaType.TEXT_PLAIN_VALUE,
+                "VPN troubleshooting steps".getBytes()
+        );
+
+        mockMvc.perform(MockMvcRequestBuilders.multipart("/api/documents/upload")
+                        .file(file)
+                        .param("title", "VPN Runbook")
+                        .param("category", "VPN")
+                        .param("department", "IT")
+                        .param("accessLevel", "INTERNAL")
+                        .param("version", "v1.0")
+                        .param("updatedAt", "2026-04-19T12:00:00Z"))
+                .andExpect(MockMvcResultMatchers.status().isBadRequest())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.success").value(false))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.code").value("COMMON_VALIDATION_ERROR"));
+    }
+
+    @Test
+    void listDocumentsRejectsLegacyCategoryFilter() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.get("/api/documents")
+                        .param("category", "VPN"))
+                .andExpect(MockMvcResultMatchers.status().isBadRequest())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.success").value(false))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.code").value("COMMON_VALIDATION_ERROR"));
     }
 
     @Test
@@ -165,7 +206,7 @@ class DocumentControllerWebMvcTest {
                 DocumentIndexStatus.INDEXED,
                 3,
                 "hashing-v1",
-                new DocumentMetadataResponse(id, title, "VPN", "IT", KnowledgeAccessLevel.INTERNAL, "v1.0", UPDATED_AT),
+                new DocumentMetadataResponse(id, title, "REMOTE_ACCESS", "IT", KnowledgeAccessLevel.INTERNAL, "v1.0", UPDATED_AT),
                 UPDATED_AT,
                 UPDATED_AT
         );

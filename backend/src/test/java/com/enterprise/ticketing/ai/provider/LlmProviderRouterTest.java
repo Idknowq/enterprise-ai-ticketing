@@ -33,11 +33,12 @@ class LlmProviderRouterTest {
         );
 
         StructuredLlmResponse<AiClassificationOutput> response = router.classify(
-                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", null)
+                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", "REMOTE_ACCESS")
         );
 
         assertThat(response.providerType()).isEqualTo("rule-based");
         assertThat(response.modelName()).isEqualTo("mvp-rule-based");
+        assertThat(response.output().category()).isEqualTo("REMOTE_ACCESS");
         assertThat(response.fallbackUsed()).isTrue();
         assertThat(response.fallbackReason()).contains("deepseek timeout");
     }
@@ -49,7 +50,7 @@ class LlmProviderRouterTest {
         when(deepSeekProvider.classify(any())).thenThrow(new IllegalStateException("deepseek timeout"));
         when(deepSeekProvider.providerType()).thenReturn("deepseek");
         when(localStructuredLlmProvider.classify(any())).thenReturn(new StructuredLlmResponse<>(
-                new AiClassificationOutput("VPN_ISSUE", TicketPriority.MEDIUM, 0.61d),
+                new AiClassificationOutput("REMOTE_ACCESS", TicketPriority.MEDIUM, 0.61d),
                 "local-llm",
                 "qwen2.5:3b",
                 8,
@@ -70,7 +71,7 @@ class LlmProviderRouterTest {
         );
 
         StructuredLlmResponse<AiClassificationOutput> response = router.classify(
-                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", null)
+                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", "REMOTE_ACCESS")
         );
 
         assertThat(response.providerType()).isEqualTo("local-llm");
@@ -111,7 +112,7 @@ class LlmProviderRouterTest {
         );
 
         StructuredLlmResponse<AiExtractionOutput> response = router.extract(
-                new AiExtractionInput("VPN 连接失败", "证书失效", "VPN_ISSUE")
+                new AiExtractionInput("VPN 连接失败", "证书失效", "REMOTE_ACCESS")
         );
 
         assertThat(response.providerType()).isEqualTo("deepseek");

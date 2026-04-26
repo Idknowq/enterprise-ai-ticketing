@@ -5,6 +5,7 @@ import com.enterprise.ticketing.auth.entity.UserEntity;
 import com.enterprise.ticketing.auth.repository.UserRepository;
 import com.enterprise.ticketing.common.error.ErrorCode;
 import com.enterprise.ticketing.common.exception.BusinessException;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.ticket.domain.TicketEventType;
 import com.enterprise.ticketing.ticket.domain.TicketPriority;
 import com.enterprise.ticketing.ticket.domain.TicketStatus;
@@ -73,7 +74,7 @@ public class TicketCoreServiceImpl
         TicketEntity ticket = new TicketEntity();
         ticket.setTitle(request.title().trim());
         ticket.setDescription(request.description().trim());
-        ticket.setCategory(normalize(request.category()));
+        ticket.setCategory(normalizeCategory(request.category()));
         ticket.setPriority(request.priority() == null ? TicketPriority.MEDIUM : request.priority());
         ticket.setRequester(requester);
 
@@ -322,6 +323,10 @@ public class TicketCoreServiceImpl
 
     private String normalize(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String normalizeCategory(KnowledgeDocumentCategory category) {
+        return category == null ? null : category.code();
     }
 
     private String excerpt(String content) {

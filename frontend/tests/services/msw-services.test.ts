@@ -98,7 +98,7 @@ describe("service layer with MSW", () => {
       size: 10,
       keyword: "vpn",
       status: "OPEN",
-      category: "",
+      category: "REMOTE_ACCESS",
     });
 
     expect(requests[0]?.path).toBe("/backend-api/tickets");
@@ -106,7 +106,7 @@ describe("service layer with MSW", () => {
     expect(requests[0]?.searchParams?.get("size")).toBe("10");
     expect(requests[0]?.searchParams?.get("keyword")).toBe("vpn");
     expect(requests[0]?.searchParams?.get("status")).toBe("OPEN");
-    expect(requests[0]?.searchParams?.has("category")).toBe(false);
+    expect(requests[0]?.searchParams?.get("category")).toBe("REMOTE_ACCESS");
   });
 
   it("posts approval decisions with idempotency request id", async () => {

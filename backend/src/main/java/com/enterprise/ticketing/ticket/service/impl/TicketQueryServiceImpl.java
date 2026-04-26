@@ -3,6 +3,7 @@ package com.enterprise.ticketing.ticket.service.impl;
 import com.enterprise.ticketing.auth.security.UserPrincipal;
 import com.enterprise.ticketing.common.error.ErrorCode;
 import com.enterprise.ticketing.common.exception.BusinessException;
+import com.enterprise.ticketing.knowledge.domain.KnowledgeDocumentCategory;
 import com.enterprise.ticketing.ticket.domain.TicketStatus;
 import com.enterprise.ticketing.ticket.dto.TicketDetailResponse;
 import com.enterprise.ticketing.ticket.dto.TicketListQuery;
@@ -92,7 +93,7 @@ public class TicketQueryServiceImpl implements TicketQueryService {
                 .and(keywordSpecification(query.getKeyword()))
                 .and(exactSpecification("status", query.getStatus()))
                 .and(exactSpecification("priority", query.getPriority()))
-                .and(stringSpecification("category", query.getCategory()))
+                .and(exactCategorySpecification(query.getCategory()))
                 .and(exactLongSpecification("requester", "id", query.getRequesterId()))
                 .and(exactLongSpecification("assignee", "id", query.getAssigneeId()));
     }
@@ -134,10 +135,10 @@ public class TicketQueryServiceImpl implements TicketQueryService {
                 : criteriaBuilder.equal(root.get(field), value);
     }
 
-    private Specification<TicketEntity> stringSpecification(String field, String value) {
-        return (root, query, criteriaBuilder) -> !StringUtils.hasText(value)
+    private Specification<TicketEntity> exactCategorySpecification(KnowledgeDocumentCategory category) {
+        return (root, query, criteriaBuilder) -> category == null
                 ? criteriaBuilder.conjunction()
-                : criteriaBuilder.equal(criteriaBuilder.lower(root.get(field)), value.trim().toLowerCase());
+                : criteriaBuilder.equal(root.get("category"), category.code());
     }
 
     private Specification<TicketEntity> exactLongSpecification(String field, String nestedField, Long value) {
