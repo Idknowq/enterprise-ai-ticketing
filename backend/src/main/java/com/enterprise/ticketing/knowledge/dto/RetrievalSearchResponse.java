@@ -7,6 +7,7 @@ import java.util.List;
 public record RetrievalSearchResponse(
         String query,
         Long ticketId,
+        RetrievalDiagnosticsResponse diagnostics,
         List<RetrievalResultItemResponse> results
 ) {
 }

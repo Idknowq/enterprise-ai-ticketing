@@ -3,6 +3,7 @@ package com.enterprise.ticketing.knowledge.qdrant;
 import com.enterprise.ticketing.common.error.ErrorCode;
 import com.enterprise.ticketing.common.exception.BusinessException;
 import com.enterprise.ticketing.config.ApplicationProperties;
+import com.enterprise.ticketing.knowledge.service.EmbeddingProvider;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,12 +22,18 @@ import org.springframework.web.client.RestClientResponseException;
 public class QdrantClient {
 
     private final ApplicationProperties applicationProperties;
+    private final EmbeddingProvider embeddingProvider;
     private final RestClient restClient;
     private final AtomicBoolean collectionReady = new AtomicBoolean(false);
     private final String baseUrl;
 
-    public QdrantClient(ApplicationProperties applicationProperties, RestClient.Builder restClientBuilder) {
+    public QdrantClient(
+            ApplicationProperties applicationProperties,
+            EmbeddingProvider embeddingProvider,
+            RestClient.Builder restClientBuilder
+    ) {
         this.applicationProperties = applicationProperties;
+        this.embeddingProvider = embeddingProvider;
         this.baseUrl = "http://" + applicationProperties.getQdrant().getHost() + ":" + applicationProperties.getQdrant().getHttpPort();
         RestClient.Builder builder = restClientBuilder
                 .baseUrl(baseUrl)
@@ -105,12 +112,15 @@ public class QdrantClient {
             return;
         }
         try {
-            restClient.get()
+            Map<?, ?> response = restClient.get()
                     .uri("/collections/{collection}", collectionName())
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(Map.class);
+            assertCollectionVectorSize(response);
             collectionReady.set(true);
             return;
+        } catch (BusinessException exception) {
+            throw exception;
         } catch (RestClientResponseException exception) {
             if (exception.getStatusCode().value() != 404) {
                 throw unavailable("Failed to inspect Qdrant collection at " + baseUrl);
@@ -123,7 +133,7 @@ public class QdrantClient {
                 .uri("/collections/{collection}", collectionName())
                 .body(Map.of(
                         "vectors", Map.of(
-                                "size", applicationProperties.getKnowledge().getEmbeddingDimension(),
+                                "size", embeddingProvider.dimension(),
                                 "distance", "Cosine"
                         )
                 ))
@@ -151,6 +161,54 @@ public class QdrantClient {
 
     private BusinessException unavailable(String message) {
         return new BusinessException(ErrorCode.KNOWLEDGE_VECTOR_STORE_UNAVAILABLE, message);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertCollectionVectorSize(Map<?, ?> response) {
+        int expectedDimension = embeddingProvider.dimension();
+        Object result = response == null ? null : response.get("result");
+        if (!(result instanceof Map<?, ?> resultMap)) {
+            return;
+        }
+        Object config = resultMap.get("config");
+        if (!(config instanceof Map<?, ?> configMap)) {
+            return;
+        }
+        Object params = configMap.get("params");
+        if (!(params instanceof Map<?, ?> paramsMap)) {
+            return;
+        }
+        Object vectors = paramsMap.get("vectors");
+        Integer actualDimension = resolveVectorSize(vectors);
+        if (actualDimension == null) {
+            return;
+        }
+        if (actualDimension != expectedDimension) {
+            throw unavailable(
+                    "Qdrant collection '" + collectionName()
+                            + "' vector size mismatch: expected " + expectedDimension
+                            + " from embedding model " + embeddingProvider.modelName()
+                            + " but existing collection uses " + actualDimension
+                            + ". Recreate the collection before switching embedding models."
+            );
+        }
+    }
+
+    private Integer resolveVectorSize(Object vectors) {
+        if (vectors instanceof Map<?, ?> vectorMap) {
+            Object size = vectorMap.get("size");
+            if (size instanceof Number number) {
+                return number.intValue();
+            }
+            Object defaultVector = vectorMap.get("");
+            if (defaultVector instanceof Map<?, ?> defaultVectorMap) {
+                Object defaultSize = defaultVectorMap.get("size");
+                if (defaultSize instanceof Number number) {
+                    return number.intValue();
+                }
+            }
+        }
+        return null;
     }
 
     private String collectionName() {

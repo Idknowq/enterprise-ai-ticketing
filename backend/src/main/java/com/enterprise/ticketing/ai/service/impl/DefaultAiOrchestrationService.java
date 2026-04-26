@@ -1,6 +1,7 @@
 package com.enterprise.ticketing.ai.service.impl;
 
 import com.enterprise.ticketing.ai.domain.AiNodeName;
+import com.enterprise.ticketing.ai.domain.AiAnalysisMode;
 import com.enterprise.ticketing.ai.domain.AiRunStatus;
 import com.enterprise.ticketing.ai.dto.AiDecisionResult;
 import com.enterprise.ticketing.ai.dto.AiNodeRunResponse;
@@ -8,6 +9,7 @@ import com.enterprise.ticketing.ai.dto.AiWorkflowRunResponse;
 import com.enterprise.ticketing.ai.entity.AiRunEntity;
 import com.enterprise.ticketing.ai.repository.AiRunRepository;
 import com.enterprise.ticketing.ai.service.AiOrchestrationService;
+import com.enterprise.ticketing.ai.workflow.AiNodeExecutionDetails;
 import com.enterprise.ticketing.ai.workflow.AiWorkflowState;
 import com.enterprise.ticketing.ai.workflow.TicketClassifierNode;
 import com.enterprise.ticketing.ai.workflow.TicketExtractorNode;
@@ -29,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -129,18 +132,34 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
     }
 
     private AiDecisionResult buildDecisionResult(AiWorkflowState state) {
+        String providerType = nodeProviderType(state);
+        String modelName = nodeModelName(state);
+        String fallbackReason = state.getNodeExecutionDetails().values().stream()
+                .filter(AiNodeExecutionDetails::fallbackUsed)
+                .map(AiNodeExecutionDetails::fallbackReason)
+                .filter(reason -> reason != null && !reason.isBlank())
+                .distinct()
+                .collect(Collectors.joining(" | "));
         return new AiDecisionResult(
+                "v2",
                 state.getWorkflowId(),
                 state.getTicket().id(),
                 state.getClassification().category(),
                 state.getClassification().priority(),
                 state.getClassification().confidence(),
+                providerType,
+                modelName,
+                resolveAnalysisMode(providerType).name(),
+                state.getNodeExecutionDetails().values().stream().anyMatch(AiNodeExecutionDetails::fallbackUsed),
+                fallbackReason.isBlank() ? null : fallbackReason,
                 state.getResolution().requiresApproval(),
                 state.getResolution().needsHumanHandoff(),
                 state.getResolution().draftReply(),
                 state.getResolution().suggestedActions(),
                 state.getExtractedFields(),
                 state.getCitations(),
+                state.getRetrievalStatus().name(),
+                state.getRetrievalDiagnostics(),
                 Instant.now().truncatedTo(ChronoUnit.MILLIS)
         );
     }
@@ -176,10 +195,14 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
                     ticketId,
                     workflowId,
                     AiNodeName.ORCHESTRATION,
+                    "ai-orchestration",
                     "ai-orchestration-service",
                     latencyMs,
                     0,
                     0,
+                    decisionResult.fallbackUsed(),
+                    decisionResult.fallbackReason(),
+                    decisionResult.retrievalStatus(),
                     "AI orchestration completed",
                     decisionResult
             );
@@ -191,8 +214,12 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
                     ticketId,
                     workflowId,
                     AiNodeName.ORCHESTRATION,
+                    "ai-orchestration",
                     "ai-orchestration-service",
                     latencyMs,
+                    false,
+                    null,
+                    null,
                     exception.getMessage(),
                     Map.of("ticketId", ticketId)
             );
@@ -213,5 +240,33 @@ public class DefaultAiOrchestrationService implements AiOrchestrationService {
 
     private String workflowId() {
         return "ai-" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private String nodeProviderType(AiWorkflowState state) {
+        AiNodeExecutionDetails resolutionDetails = state.getNodeExecutionDetails().get(AiNodeName.RESOLUTION);
+        if (resolutionDetails != null) {
+            return resolutionDetails.providerType();
+        }
+        AiNodeExecutionDetails classifierDetails = state.getNodeExecutionDetails().get(AiNodeName.CLASSIFIER);
+        return classifierDetails == null ? "unknown" : classifierDetails.providerType();
+    }
+
+    private String nodeModelName(AiWorkflowState state) {
+        AiNodeExecutionDetails resolutionDetails = state.getNodeExecutionDetails().get(AiNodeName.RESOLUTION);
+        if (resolutionDetails != null) {
+            return resolutionDetails.modelName();
+        }
+        AiNodeExecutionDetails classifierDetails = state.getNodeExecutionDetails().get(AiNodeName.CLASSIFIER);
+        return classifierDetails == null ? "unknown" : classifierDetails.modelName();
+    }
+
+    private AiAnalysisMode resolveAnalysisMode(String providerType) {
+        if ("rule-based".equalsIgnoreCase(providerType)) {
+            return AiAnalysisMode.RULE_BASED;
+        }
+        if ("local-llm".equalsIgnoreCase(providerType)) {
+            return AiAnalysisMode.LOCAL_LLM;
+        }
+        return AiAnalysisMode.REMOTE_LLM;
     }
 }

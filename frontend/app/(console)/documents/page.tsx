@@ -18,6 +18,7 @@ import type {
 } from "@/types/api";
 import { InboxOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -203,6 +204,13 @@ export default function DocumentsPage() {
           </Space>
         }
       >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="Embedding 模型路由由后端控制"
+          description="当前知识库索引已切换为本地 embedding 优先策略。前端仅负责上传与查询，不固定指定 provider，后续后端切换商用模型时无需调整当前页面交互。"
+        />
         {!canUpload ? (
           <Typography.Paragraph type="secondary">
             当前账号可查看文档列表，但上传接口仅对管理员开放。

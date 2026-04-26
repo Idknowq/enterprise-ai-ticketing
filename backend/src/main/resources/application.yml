@@ -85,6 +85,14 @@ app:
       api-key: ${APP_AI_PROVIDER_API_KEY:}
       chat-path: ${APP_AI_PROVIDER_CHAT_PATH:/v1/chat/completions}
       timeout: ${APP_AI_PROVIDER_TIMEOUT:20s}
+      local:
+        enabled: ${APP_AI_PROVIDER_LOCAL_ENABLED:false}
+        type: ${APP_AI_PROVIDER_LOCAL_TYPE:openai-compatible}
+        model: ${APP_AI_PROVIDER_LOCAL_MODEL:local-small}
+        base-url: ${APP_AI_PROVIDER_LOCAL_BASE_URL:}
+        api-key: ${APP_AI_PROVIDER_LOCAL_API_KEY:}
+        chat-path: ${APP_AI_PROVIDER_LOCAL_CHAT_PATH:/v1/chat/completions}
+        timeout: ${APP_AI_PROVIDER_LOCAL_TIMEOUT:20s}
   qdrant:
     host: ${APP_QDRANT_HOST:127.0.0.1}
     http-port: ${APP_QDRANT_HTTP_PORT:6333}
@@ -92,15 +100,34 @@ app:
     api-key: ${APP_QDRANT_API_KEY:}
   knowledge:
     collection-name: ${APP_KNOWLEDGE_COLLECTION_NAME:knowledge_chunks}
-    embedding-dimension: ${APP_KNOWLEDGE_EMBEDDING_DIMENSION:256}
+    embedding-dimension: ${APP_KNOWLEDGE_EMBEDDING_DIMENSION:768}
     chunk-size: ${APP_KNOWLEDGE_CHUNK_SIZE:800}
     chunk-overlap: ${APP_KNOWLEDGE_CHUNK_OVERLAP:120}
     default-top-k: ${APP_KNOWLEDGE_DEFAULT_TOP_K:5}
     max-top-k: ${APP_KNOWLEDGE_MAX_TOP_K:10}
     global-department: ${APP_KNOWLEDGE_GLOBAL_DEPARTMENT:GLOBAL}
     embedding:
-      provider: ${APP_KNOWLEDGE_EMBEDDING_PROVIDER:hashing}
-      model: ${APP_KNOWLEDGE_EMBEDDING_MODEL:hashing-v1}
+      provider: ${APP_KNOWLEDGE_EMBEDDING_PROVIDER:deprecated}
+      model: ${APP_KNOWLEDGE_EMBEDDING_MODEL:deprecated}
+      routing:
+        mode: ${APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE:local}
+      local:
+        enabled: ${APP_KNOWLEDGE_EMBEDDING_LOCAL_ENABLED:true}
+        provider-type: ${APP_KNOWLEDGE_EMBEDDING_LOCAL_PROVIDER_TYPE:ollama}
+        model: ${APP_KNOWLEDGE_EMBEDDING_LOCAL_MODEL:nomic-embed-text:latest}
+        base-url: ${APP_KNOWLEDGE_EMBEDDING_LOCAL_BASE_URL:http://127.0.0.1:11434}
+        embedding-path: ${APP_KNOWLEDGE_EMBEDDING_LOCAL_EMBEDDING_PATH:/api/embeddings}
+        timeout: ${APP_KNOWLEDGE_EMBEDDING_LOCAL_TIMEOUT:20s}
+        dimension: ${APP_KNOWLEDGE_EMBEDDING_LOCAL_DIMENSION:768}
+      commercial:
+        enabled: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_ENABLED:false}
+        provider-type: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_PROVIDER_TYPE:openai}
+        model: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_MODEL:text-embedding-3-large}
+        base-url: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_BASE_URL:https://api.openai.com}
+        api-key: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_API_KEY:}
+        embedding-path: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_EMBEDDING_PATH:/v1/embeddings}
+        timeout: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_TIMEOUT:20s}
+        dimension: ${APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_DIMENSION:3072}
   temporal:
     host: ${APP_TEMPORAL_HOST:127.0.0.1}
     port: ${APP_TEMPORAL_PORT:7233}

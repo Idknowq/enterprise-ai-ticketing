@@ -31,15 +31,29 @@ public class TicketClassifierNode {
                     )
             );
             state.setClassification(response.output());
+            state.putNodeExecutionDetails(
+                    AiNodeName.CLASSIFIER,
+                    new AiNodeExecutionDetails(
+                            AiNodeName.CLASSIFIER,
+                            response.providerType(),
+                            response.modelName(),
+                            response.fallbackUsed(),
+                            response.fallbackReason()
+                    )
+            );
             int latencyMs = toLatencyMs(startedAt);
             aiRunLogService.recordSuccess(
                     state.getTicket().id(),
                     state.getWorkflowId(),
                     AiNodeName.CLASSIFIER,
+                    response.providerType(),
                     response.modelName(),
                     latencyMs,
                     response.tokenInput(),
                     response.tokenOutput(),
+                    response.fallbackUsed(),
+                    response.fallbackReason(),
+                    null,
                     "Category=" + response.output().category() + ", priority=" + response.output().priority(),
                     response.output()
             );
@@ -48,8 +62,12 @@ public class TicketClassifierNode {
                     state.getTicket().id(),
                     state.getWorkflowId(),
                     AiNodeName.CLASSIFIER,
+                    llmProviderRouter.providerType(),
                     llmProviderRouter.defaultModelName(),
                     toLatencyMs(startedAt),
+                    false,
+                    null,
+                    null,
                     exception.getMessage(),
                     null
             );

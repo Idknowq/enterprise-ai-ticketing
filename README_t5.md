@@ -38,7 +38,7 @@
 2. 分类节点输出 `category / priority / confidence`
 3. 字段抽取节点输出 `extractedFields`
 4. 检索节点调用 `RetrievalService`
-5. 处理建议节点输出审批判断、人工接管判断、草稿回复和建议动作
+5. 处理建议节点基于 citations 和 extracted fields 输出审批判断、人工接管判断、草稿回复和建议动作
 6. 聚合为最终 `AiDecisionResult`
 7. 将每个节点与最终编排结果写入 `ai_runs`
 
@@ -97,8 +97,11 @@
 
 当前行为：
 
-- 若仓库中有可用的 `RetrievalService` 实现，则优先调用检索服务
-- 若检索服务未实现或调用异常，则回退到启发式 citations，保证 MVP 主链路可跑通
+- 只消费真实 `RetrievalService` 返回结果
+- 检索命中时输出真实 citations
+- 检索空结果时输出空 citations，并标记 `retrievalStatus=EMPTY`
+- 检索异常时输出空 citations，并标记 `retrievalStatus=ERROR`
+- 若容器内不存在 `RetrievalService`，则标记 `retrievalStatus=UNAVAILABLE`
 
 实现位置：
 
@@ -130,11 +133,17 @@
 
 ```json
 {
+  "schemaVersion": "v2",
   "workflowId": "ai-7a2c...",
   "ticketId": 123,
   "category": "VPN_ISSUE",
   "priority": "MEDIUM",
-  "confidence": 0.92,
+  "confidence": 0.82,
+  "providerType": "deepseek",
+  "modelName": "deepseek-chat",
+  "analysisMode": "REMOTE_LLM",
+  "fallbackUsed": false,
+  "fallbackReason": null,
   "requiresApproval": false,
   "needsHumanHandoff": false,
   "draftReply": "AI triage suggests category VPN_ISSUE...",
@@ -153,9 +162,26 @@
       "title": "VPN Certificate Renewal SOP",
       "snippet": "Steps to renew expired VPN certificates...",
       "score": 0.88,
-      "sourceRef": "citation:1001"
+      "retrievalScore": 0.88,
+      "rerankScore": 0.91,
+      "sourceRef": "citation:1001",
+      "metadata": {
+        "category": "VPN",
+        "department": "GLOBAL"
+      }
     }
   ],
+  "retrievalStatus": "HIT",
+  "retrievalDiagnostics": {
+    "retrievalMode": "HYBRID_CANDIDATES_WITH_RERANK",
+    "candidateCount": 24,
+    "returnedCount": 4,
+    "filterSummary": {
+      "category": "VPN",
+      "departments": ["GLOBAL", "IT"]
+    },
+    "message": "Retrieval completed successfully"
+  },
   "generatedAt": "2026-04-16T10:00:00Z"
 }
 ```
@@ -174,6 +200,7 @@ Java 定义位置：
 migration 文件：
 
 - `backend/src/main/resources/db/migration/V5__init_ai_orchestration.sql`
+- `backend/src/main/resources/db/migration/V7__upgrade_ai_run_audit_fields.sql`
 
 核心字段：
 
@@ -181,10 +208,14 @@ migration 文件：
 - `workflow_id`
 - `node_name`
 - `status`
+- `provider_type`
 - `model_name`
 - `latency_ms`
 - `token_input`
 - `token_output`
+- `fallback_used`
+- `fallback_reason`
+- `retrieval_status`
 - `result_summary`
 - `result_payload`
 - `error_message`
@@ -218,20 +249,22 @@ migration 文件：
 - `StructuredLlmProvider`
 - `RuleBasedStructuredLlmProvider`
 - `DeepSeekStructuredLlmProvider`
+- `LocalStructuredLlmProvider`
 - `LlmProviderRouter`
 
 ### 7.1 默认行为
 
-默认使用规则型 provider：
+默认推荐生产使用 DeepSeek：
 
-- `app.ai.provider.type=rule-based`
-- `app.ai.provider.model=mvp-rule-based`
+- `app.ai.provider.type=deepseek`
+- `app.ai.provider.model=deepseek-chat`
 
-适用场景：
+`rule-based` 仅保留为：
 
-- 本地未配置真实模型服务
-- 希望先验证完整 AI 主链路
-- 单元测试和 demo 环境
+- 本地无密钥测试
+- Provider 故障兜底
+- 单元测试 stub
+- 关键词命中的保守通用策略输出
 
 ### 7.2 DeepSeek Provider
 
@@ -242,7 +275,14 @@ migration 文件：
 
 则会调用 DeepSeek 兼容 Chat Completions 的模型服务。
 
-若调用失败，会自动回退到规则型 provider，避免整条链路不可用。
+当前路由策略：
+
+- `Classifier / Extractor / Resolution` 优先调用 DeepSeek
+- 若本地模型已启用，则在 DeepSeek 失败后优先切到 `LocalStructuredLlmProvider`
+- 模型返回非法 JSON 或缺字段时会执行有限重试
+- 远端和本地模型都失败时才会回退到 `rule-based`
+- 回退会写入 `ai_runs`，并回传 `fallbackUsed / fallbackReason`
+- `rule-based` 不返回伪 citations，只输出保守的关键词通用建议
 
 ## 8. 配置项
 
@@ -261,14 +301,21 @@ migration 文件：
 - `app.ai.provider.api-key`
 - `app.ai.provider.chat-path`
 - `app.ai.provider.timeout`
+- `app.ai.provider.local.enabled`
+- `app.ai.provider.local.type`
+- `app.ai.provider.local.model`
+- `app.ai.provider.local.base-url`
+- `app.ai.provider.local.api-key`
+- `app.ai.provider.local.chat-path`
+- `app.ai.provider.local.timeout`
 
 环境变量示例：
 
 ```bash
 APP_AI_ENABLED=true
 APP_AI_RETRIEVAL_TOP_K=4
-APP_AI_PROVIDER_TYPE=rule-based
-APP_AI_PROVIDER_MODEL=mvp-rule-based
+APP_AI_PROVIDER_TYPE=deepseek
+APP_AI_PROVIDER_MODEL=deepseek-chat
 ```
 
 DeepSeek 示例：
@@ -276,10 +323,21 @@ DeepSeek 示例：
 ```bash
 APP_AI_PROVIDER_TYPE=deepseek
 APP_AI_PROVIDER_MODEL=deepseek-chat
-APP_AI_PROVIDER_BASE_URL=
+APP_AI_PROVIDER_BASE_URL=https://api.deepseek.com
 APP_AI_PROVIDER_API_KEY=your-key
 APP_AI_PROVIDER_CHAT_PATH=/v1/chat/completions
 APP_AI_PROVIDER_TIMEOUT=20s
+```
+
+本地模型示例：
+
+```bash
+APP_AI_PROVIDER_LOCAL_ENABLED=true
+APP_AI_PROVIDER_LOCAL_TYPE=openai-compatible
+APP_AI_PROVIDER_LOCAL_MODEL=qwen2.5:3b
+APP_AI_PROVIDER_LOCAL_BASE_URL=http://127.0.0.1:11434
+APP_AI_PROVIDER_LOCAL_CHAT_PATH=/v1/chat/completions
+APP_AI_PROVIDER_LOCAL_TIMEOUT=20s
 ```
 
 ## 9. 对外接口
@@ -350,7 +408,7 @@ mvn spring-boot:run
 
 ```bash
 BASE_URL='http://localhost:8080'
-USERNAME='employee01'
+USERNAME='support01'
 PASSWORD='ChangeMe123!'
 
 TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
@@ -389,6 +447,10 @@ curl -X POST "$BASE_URL/api/ai/tickets/$TICKET_ID/run" \
 - 返回 `confidence`
 - 返回 `extractedFields`
 - 返回 `citations`
+- 返回 `providerType / modelName`
+- 返回 `analysisMode`
+- 返回 `fallbackUsed / fallbackReason`
+- 返回 `retrievalStatus / retrievalDiagnostics`
 - 返回 `suggestedActions`
 - 返回 `requiresApproval`
 - 返回 `needsHumanHandoff`
@@ -426,6 +488,10 @@ mvn test
 - VPN 分类
 - 权限申请字段抽取
 - 需要审批场景的建议生成
+- 远端模型失败后切到本地模型
+- LLM primary provider 回退与重试
+- Retriever 空结果 / 异常的显式状态
+- Retriever 不再从 AI 分类反推检索 category
 
 测试位置：
 
@@ -439,17 +505,19 @@ mvn test
 2. 能返回结构化分类结果
 3. 能返回结构化字段抽取结果
 4. 能返回 citations
-5. 能返回处理建议和草稿回复
-6. 能判断是否需要审批
-7. 能判断是否需要人工接管
-8. 每次执行都能在 `ai_runs` 中追踪
+5. citations 为空时能区分 `EMPTY / ERROR / UNAVAILABLE`
+6. 能返回处理建议和草稿回复
+7. 能判断是否需要审批
+8. 能判断是否需要人工接管
+9. 每次执行都能在 `ai_runs` 中追踪
+10. 发生 fallback 时能在返回值和 `ai_runs` 中看到原因
 
 ### 11.3 数据库验证
 
 可直接在 PostgreSQL 中检查：
 
 ```sql
-select id, ticket_id, workflow_id, node_name, status, model_name, latency_ms, created_at
+select id, ticket_id, workflow_id, node_name, status, provider_type, model_name, fallback_used, retrieval_status, created_at
 from ai_runs
 order by id desc;
 ```
@@ -458,6 +526,7 @@ order by id desc;
 
 - 同一次执行会有多个相同 `workflow_id` 的节点记录
 - 每个节点有明确的 `node_name`
+- 可区分 LLM provider 与 retrieval 状态
 - 失败时会记录 `error_message`
 
 ## 12. 其他 thread 如何使用
@@ -473,6 +542,7 @@ order by id desc;
 
 - `category`
 - `priority`
+- `analysisMode`
 - `requiresApproval`
 - `needsHumanHandoff`
 - `draftReply`
@@ -488,22 +558,40 @@ order by id desc;
 建议方式：
 
 - 实现 `RetrievalService.search(RetrievalSearchRequest request)`
-- 继续返回标准 `RetrievalSearchResponse`
-- AI 模块会自动消费 Thread 4 的检索结果
+- 返回升级后的 `RetrievalSearchResponse`
+- AI 模块会自动消费真实 citations 与检索诊断字段
 
 当前 AI 侧已传递的输入：
 
 - `query`
 - `ticketId`
+- `ticketContext`
 - `category`
 - `department`
 - `limit`
 - `aiRunId`
 
+当前 AI 侧期望的输出：
+
+- `results[].docId`
+- `results[].chunkId`
+- `results[].title`
+- `results[].contentSnippet`
+- `results[].score`
+- `results[].retrievalScore`
+- `results[].rerankScore`
+- `results[].sourceRef`
+- `results[].metadataMap`
+- `diagnostics.retrievalMode`
+- `diagnostics.candidateCount`
+- `diagnostics.returnedCount`
+- `diagnostics.filterSummary`
+
 不要做的事：
 
 - 不要在 RetrievalService 中做审批判断
 - 不要直接写 Ticket 状态
+- 不要要求 Thread 5 在编排层维护 `AI category -> KB category` 的硬编码映射
 
 ### 12.3 Thread 6：Workflow / Approval / Observability
 
@@ -550,6 +638,8 @@ order by id desc;
 - `draftReply` 只适合展示或人工编辑，不应作为后端核心逻辑判断依据
 - 所有状态更新只能通过 TicketService 或 WorkflowService
 - schema 变更要优先保持向后兼容，避免破坏其他 thread 对接
+- 其他 thread 应优先消费 `retrievalStatus / retrievalDiagnostics / fallbackUsed`，不要把空 citations 误判为“AI 未运行”
+- `analysisMode=RULE_BASED` 表示当前结果来自关键词兜底，只应视为低可信保守建议
 
 ## 14. 当前限制与后续扩展点
 
@@ -561,6 +651,7 @@ order by id desc;
 - 节点级 trace 关联到 workflow / approval
 - 更细的 citation source type
 - 与工单详情聚合接口深度集成
-- 模型输出 schema 的显式校验与版本化
+- 更强的 prompt 模板版本管理与 A/B rollout
+- 真正的 hybrid retrieval / rerank 底层实现由 Thread 4 继续完善
 
 当前原则是先冻结 AI 编排入口、schema 和运行日志结构，保证其他 thread 能稳定接入。

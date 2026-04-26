@@ -33,15 +33,29 @@ public class TicketResolutionNode {
                     )
             );
             state.setResolution(response.output());
+            state.putNodeExecutionDetails(
+                    AiNodeName.RESOLUTION,
+                    new AiNodeExecutionDetails(
+                            AiNodeName.RESOLUTION,
+                            response.providerType(),
+                            response.modelName(),
+                            response.fallbackUsed(),
+                            response.fallbackReason()
+                    )
+            );
             int latencyMs = toLatencyMs(startedAt);
             aiRunLogService.recordSuccess(
                     state.getTicket().id(),
                     state.getWorkflowId(),
                     AiNodeName.RESOLUTION,
+                    response.providerType(),
                     response.modelName(),
                     latencyMs,
                     response.tokenInput(),
                     response.tokenOutput(),
+                    response.fallbackUsed(),
+                    response.fallbackReason(),
+                    state.getRetrievalStatus().name(),
                     "requiresApproval=" + response.output().requiresApproval()
                             + ", needsHumanHandoff=" + response.output().needsHumanHandoff(),
                     response.output()
@@ -51,8 +65,12 @@ public class TicketResolutionNode {
                     state.getTicket().id(),
                     state.getWorkflowId(),
                     AiNodeName.RESOLUTION,
+                    llmProviderRouter.providerType(),
                     llmProviderRouter.defaultModelName(),
                     toLatencyMs(startedAt),
+                    false,
+                    null,
+                    state.getRetrievalStatus().name(),
                     exception.getMessage(),
                     null
             );

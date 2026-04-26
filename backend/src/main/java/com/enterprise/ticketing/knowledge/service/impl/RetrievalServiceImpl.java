@@ -5,6 +5,7 @@ import com.enterprise.ticketing.common.exception.BusinessException;
 import com.enterprise.ticketing.config.ApplicationProperties;
 import com.enterprise.ticketing.knowledge.domain.KnowledgeAccessLevel;
 import com.enterprise.ticketing.knowledge.dto.DocumentMetadataResponse;
+import com.enterprise.ticketing.knowledge.dto.RetrievalDiagnosticsResponse;
 import com.enterprise.ticketing.knowledge.dto.RetrievalResultItemResponse;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchRequest;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchResponse;
@@ -66,12 +67,35 @@ public class RetrievalServiceImpl implements RetrievalService {
         int limit = resolveLimit(request.getLimit());
         Set<KnowledgeAccessLevel> accessLevels = resolveAccessLevels(request.getAccessLevel());
         if (accessLevels.isEmpty()) {
-            return new RetrievalSearchResponse(effectiveQuery, request.getTicketId(), List.of());
+            return new RetrievalSearchResponse(
+                    effectiveQuery,
+                    request.getTicketId(),
+                    new RetrievalDiagnosticsResponse(
+                            "VECTOR_WITH_METADATA_FILTERS",
+                            0,
+                            0,
+                            Map.of("reason", "requested access level is not allowed")
+                    ),
+                    List.of()
+            );
         }
 
         Set<String> departments = documentAccessPolicy.allowedDepartments(request.getDepartment());
         if (departments.contains("__DENY__")) {
-            return new RetrievalSearchResponse(effectiveQuery, request.getTicketId(), List.of());
+            return new RetrievalSearchResponse(
+                    effectiveQuery,
+                    request.getTicketId(),
+                    new RetrievalDiagnosticsResponse(
+                            "VECTOR_WITH_METADATA_FILTERS",
+                            0,
+                            0,
+                            Map.of(
+                                    "reason", "requested department is not allowed",
+                                    "requestedDepartment", request.getDepartment()
+                            )
+                    ),
+                    List.of()
+            );
         }
 
         Map<String, Object> filter = buildFilter(request, accessLevels, departments);
@@ -92,20 +116,33 @@ public class RetrievalServiceImpl implements RetrievalService {
                     documentAccessPolicy.currentUser().getId()
             );
             results = results.stream()
-                    .map(result -> new RetrievalResultItemResponse(
-                            result.docId(),
-                            result.title(),
-                            result.chunkId(),
-                            result.contentSnippet(),
-                            result.score(),
-                            result.metadata(),
-                            result.whyMatched(),
-                            citationIds.get(result.chunkId())
-                    ))
+                    .map(result -> {
+                        Long citationId = citationIds.get(result.chunkId());
+                        return new RetrievalResultItemResponse(
+                                result.docId(),
+                                result.title(),
+                                result.chunkId(),
+                                result.contentSnippet(),
+                                result.score(),
+                                result.retrievalScore(),
+                                result.rerankScore(),
+                                buildSourceRef(result.docId(), result.chunkId(), citationId),
+                                result.metadata(),
+                                result.metadataMap(),
+                                result.whyMatched(),
+                                citationId
+                        );
+                    })
                     .toList();
         }
 
-        return new RetrievalSearchResponse(effectiveQuery, request.getTicketId(), results);
+        RetrievalDiagnosticsResponse diagnostics = new RetrievalDiagnosticsResponse(
+                "VECTOR_WITH_METADATA_FILTERS",
+                hits.size(),
+                results.size(),
+                buildFilterSummary(request, accessLevels, departments)
+        );
+        return new RetrievalSearchResponse(effectiveQuery, request.getTicketId(), diagnostics, results);
     }
 
     private String resolveQuery(RetrievalSearchRequest request) {
@@ -195,10 +232,49 @@ public class RetrievalServiceImpl implements RetrievalService {
                 chunkId,
                 snippet,
                 hit.score(),
+                hit.score(),
+                null,
+                buildSourceRef(documentId, chunkId, null),
                 metadata,
+                buildMetadataMap(metadata),
                 buildWhyMatched(query, snippet, category),
                 null
         );
+    }
+
+    private Map<String, Object> buildFilterSummary(
+            RetrievalSearchRequest request,
+            Set<KnowledgeAccessLevel> accessLevels,
+            Set<String> departments
+    ) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("category", StringUtils.hasText(request.getCategory()) ? documentAccessPolicy.normalizeCategory(request.getCategory()) : null);
+        summary.put("departments", departments);
+        summary.put("accessLevels", accessLevels.stream().map(Enum::name).toList());
+        summary.put("ticketContextProvided", StringUtils.hasText(request.getTicketContext()));
+        return summary;
+    }
+
+    private Map<String, Object> buildMetadataMap(DocumentMetadataResponse metadata) {
+        return Map.of(
+                "docId", metadata.docId(),
+                "title", metadata.title(),
+                "category", metadata.category(),
+                "department", metadata.department(),
+                "accessLevel", metadata.accessLevel().name(),
+                "version", metadata.version(),
+                "updatedAt", metadata.updatedAt().toString()
+        );
+    }
+
+    private String buildSourceRef(Long documentId, String chunkId, Long citationId) {
+        if (citationId != null) {
+            return "citation:" + citationId;
+        }
+        if (documentId == null || !StringUtils.hasText(chunkId)) {
+            return null;
+        }
+        return "doc:" + documentId + "#chunk:" + chunkId;
     }
 
     private String buildWhyMatched(String query, String snippet, String category) {

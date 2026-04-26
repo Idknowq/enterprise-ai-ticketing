@@ -13,7 +13,15 @@ public interface TelemetryService {
 
     void recordAiOrchestrationResult(boolean success, long durationMs);
 
-    void recordAiDecisionHandling(boolean requiresApproval, boolean startedWorkflow, long durationMs);
+    void recordAiDecisionHandling(
+            boolean requiresApproval,
+            boolean needsHumanHandoff,
+            boolean fallbackUsed,
+            String retrievalStatus,
+            boolean startedWorkflow,
+            boolean manualReviewRequired,
+            long durationMs
+    );
 
     void recordApprovalWorkflowStarted();
 

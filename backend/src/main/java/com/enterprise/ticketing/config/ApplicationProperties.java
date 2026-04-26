@@ -135,6 +135,7 @@ public class ApplicationProperties {
             private String baseUrl;
             private String apiKey;
             private String chatPath = "/v1/chat/completions";
+            private final Local local = new Local();
 
             @NotNull
             private Duration timeout = Duration.ofSeconds(20);
@@ -185,6 +186,79 @@ public class ApplicationProperties {
 
             public void setTimeout(Duration timeout) {
                 this.timeout = timeout;
+            }
+
+            public Local getLocal() {
+                return local;
+            }
+
+            public static class Local {
+                private boolean enabled = false;
+                @NotBlank
+                private String type = "openai-compatible";
+                @NotBlank
+                private String model = "local-small";
+                private String baseUrl;
+                private String apiKey;
+                private String chatPath = "/v1/chat/completions";
+                @NotNull
+                private Duration timeout = Duration.ofSeconds(20);
+
+                public boolean isEnabled() {
+                    return enabled;
+                }
+
+                public void setEnabled(boolean enabled) {
+                    this.enabled = enabled;
+                }
+
+                public String getType() {
+                    return type;
+                }
+
+                public void setType(String type) {
+                    this.type = type;
+                }
+
+                public String getModel() {
+                    return model;
+                }
+
+                public void setModel(String model) {
+                    this.model = model;
+                }
+
+                public String getBaseUrl() {
+                    return baseUrl;
+                }
+
+                public void setBaseUrl(String baseUrl) {
+                    this.baseUrl = baseUrl;
+                }
+
+                public String getApiKey() {
+                    return apiKey;
+                }
+
+                public void setApiKey(String apiKey) {
+                    this.apiKey = apiKey;
+                }
+
+                public String getChatPath() {
+                    return chatPath;
+                }
+
+                public void setChatPath(String chatPath) {
+                    this.chatPath = chatPath;
+                }
+
+                public Duration getTimeout() {
+                    return timeout;
+                }
+
+                public void setTimeout(Duration timeout) {
+                    this.timeout = timeout;
+                }
             }
         }
     }
@@ -299,8 +373,13 @@ public class ApplicationProperties {
         }
 
         public static class Embedding {
+            @Deprecated
             private String provider = "hashing";
+            @Deprecated
             private String model = "hashing-v1";
+            private final Routing routing = new Routing();
+            private final Local local = new Local();
+            private final Commercial commercial = new Commercial();
 
             public String getProvider() {
                 return provider;
@@ -316,6 +395,182 @@ public class ApplicationProperties {
 
             public void setModel(String model) {
                 this.model = model;
+            }
+
+            public Routing getRouting() {
+                return routing;
+            }
+
+            public Local getLocal() {
+                return local;
+            }
+
+            public Commercial getCommercial() {
+                return commercial;
+            }
+
+            public static class Routing {
+                @NotBlank
+                private String mode = "local";
+
+                public String getMode() {
+                    return mode;
+                }
+
+                public void setMode(String mode) {
+                    this.mode = mode;
+                }
+            }
+
+            public static class Local {
+                private boolean enabled = true;
+                @NotBlank
+                private String providerType = "ollama";
+                @NotBlank
+                private String model = "nomic-embed-text:latest";
+                @NotBlank
+                private String baseUrl = "http://127.0.0.1:11434";
+                @NotBlank
+                private String embeddingPath = "/api/embeddings";
+                @NotNull
+                private Duration timeout = Duration.ofSeconds(20);
+                private int dimension = 768;
+
+                public boolean isEnabled() {
+                    return enabled;
+                }
+
+                public void setEnabled(boolean enabled) {
+                    this.enabled = enabled;
+                }
+
+                public String getProviderType() {
+                    return providerType;
+                }
+
+                public void setProviderType(String providerType) {
+                    this.providerType = providerType;
+                }
+
+                public String getModel() {
+                    return model;
+                }
+
+                public void setModel(String model) {
+                    this.model = model;
+                }
+
+                public String getBaseUrl() {
+                    return baseUrl;
+                }
+
+                public void setBaseUrl(String baseUrl) {
+                    this.baseUrl = baseUrl;
+                }
+
+                public String getEmbeddingPath() {
+                    return embeddingPath;
+                }
+
+                public void setEmbeddingPath(String embeddingPath) {
+                    this.embeddingPath = embeddingPath;
+                }
+
+                public Duration getTimeout() {
+                    return timeout;
+                }
+
+                public void setTimeout(Duration timeout) {
+                    this.timeout = timeout;
+                }
+
+                public int getDimension() {
+                    return dimension;
+                }
+
+                public void setDimension(int dimension) {
+                    this.dimension = dimension;
+                }
+            }
+
+            public static class Commercial {
+                private boolean enabled = false;
+                @NotBlank
+                private String providerType = "openai";
+                @NotBlank
+                private String model = "text-embedding-3-large";
+                @NotBlank
+                private String baseUrl = "https://api.openai.com";
+                private String apiKey;
+                @NotBlank
+                private String embeddingPath = "/v1/embeddings";
+                @NotNull
+                private Duration timeout = Duration.ofSeconds(20);
+                private int dimension = 3072;
+
+                public boolean isEnabled() {
+                    return enabled;
+                }
+
+                public void setEnabled(boolean enabled) {
+                    this.enabled = enabled;
+                }
+
+                public String getProviderType() {
+                    return providerType;
+                }
+
+                public void setProviderType(String providerType) {
+                    this.providerType = providerType;
+                }
+
+                public String getModel() {
+                    return model;
+                }
+
+                public void setModel(String model) {
+                    this.model = model;
+                }
+
+                public String getBaseUrl() {
+                    return baseUrl;
+                }
+
+                public void setBaseUrl(String baseUrl) {
+                    this.baseUrl = baseUrl;
+                }
+
+                public String getApiKey() {
+                    return apiKey;
+                }
+
+                public void setApiKey(String apiKey) {
+                    this.apiKey = apiKey;
+                }
+
+                public String getEmbeddingPath() {
+                    return embeddingPath;
+                }
+
+                public void setEmbeddingPath(String embeddingPath) {
+                    this.embeddingPath = embeddingPath;
+                }
+
+                public Duration getTimeout() {
+                    return timeout;
+                }
+
+                public void setTimeout(Duration timeout) {
+                    this.timeout = timeout;
+                }
+
+                public int getDimension() {
+                    return dimension;
+                }
+
+                public void setDimension(int dimension) {
+                    this.dimension = dimension;
+                }
             }
         }
     }

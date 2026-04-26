@@ -19,6 +19,7 @@ export type TicketEventType =
   | "WORKFLOW_STARTED"
   | "WORKFLOW_RESUMED"
   | "WORKFLOW_COMPLETED"
+  | "AI_REVIEW_REQUIRED"
   | "APPROVAL_REQUESTED"
   | "APPROVAL_APPROVED"
   | "APPROVAL_REJECTED";
@@ -210,6 +211,7 @@ export interface DocumentUploadPayload {
 export interface RetrievalSearchRequest {
   query?: string;
   ticketId?: number;
+  ticketContext?: string;
   category?: string;
   department?: string;
   accessLevel?: KnowledgeAccessLevel;
@@ -242,21 +244,40 @@ export interface AiCitation {
   title: string;
   snippet: string;
   score: number | null;
+  retrievalScore?: number | null;
+  rerankScore?: number | null;
   sourceRef: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface AiRetrievalDiagnostics {
+  retrievalMode?: string | null;
+  candidateCount?: number | null;
+  returnedCount?: number | null;
+  filterSummary?: Record<string, unknown> | null;
+  message?: string | null;
 }
 
 export interface AiDecisionResult {
+  schemaVersion?: string | null;
   workflowId: string;
   ticketId: number;
   category: string;
   priority: TicketPriority | null;
   confidence: number;
+  providerType?: string | null;
+  modelName?: string | null;
+  analysisMode?: string | null;
+  fallbackUsed?: boolean;
+  fallbackReason?: string | null;
   requiresApproval: boolean;
   needsHumanHandoff: boolean;
   draftReply: string;
   suggestedActions: string[];
   extractedFields: Record<string, string>;
   citations: AiCitation[];
+  retrievalStatus?: string | null;
+  retrievalDiagnostics?: AiRetrievalDiagnostics | null;
   generatedAt: string;
 }
 
@@ -265,10 +286,14 @@ export interface AiNodeRunResponse {
   workflowId: string;
   nodeName: string;
   status: AiRunStatus;
+  providerType?: string | null;
   modelName: string;
   latencyMs: number;
   tokenInput: number;
   tokenOutput: number;
+  fallbackUsed?: boolean;
+  fallbackReason?: string | null;
+  retrievalStatus?: string | null;
   resultSummary: string;
   resultPayload: Record<string, unknown> | null;
   errorMessage: string | null;

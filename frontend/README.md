@@ -48,3 +48,11 @@ npm run dev
 
 - 已对接：`auth`、`tickets`、`documents`、`retrieval`、`ai/tickets`
 - 已对接：`approvals`、`observability`
+
+## Thread 3/4/5/6 兼容说明
+
+- 前端已兼容 thread5 扩展后的 AI DTO，工单详情页会展示 `providerType`、`modelName`、`analysisMode`、`fallbackUsed`、`fallbackReason`、`retrievalStatus` 等摘要字段。
+- `requiresApproval=true` 不再等于一定进入审批流。只有在 `needsHumanHandoff=false`、`fallbackUsed=false` 且 `retrievalStatus` 不为 `ERROR/UNAVAILABLE` 时，后端才会自动发起审批。
+- 若 AI 触发 `AI_REVIEW_REQUIRED`，详情页会提示“需要人工复核”，审批页不会出现该工单待办。
+- 文档管理页不感知 embedding provider 细节。thread4 的“本地 embedding 优先”由后端路由控制，前端仅保持上传与列表能力。
+- 监控页继续直接展示 `/api/observability/dashboard` 的后端聚合指标，本轮未新增更细的 diagnostics 面板。

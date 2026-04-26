@@ -1,15 +1,16 @@
 package com.enterprise.ticketing.ai.workflow;
 
 import com.enterprise.ticketing.ai.domain.AiNodeName;
+import com.enterprise.ticketing.ai.domain.AiRetrievalStatus;
 import com.enterprise.ticketing.ai.dto.AiCitation;
+import com.enterprise.ticketing.ai.dto.AiRetrievalDiagnostics;
 import com.enterprise.ticketing.ai.service.impl.AiRunLogService;
 import com.enterprise.ticketing.config.ApplicationProperties;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchRequest;
 import com.enterprise.ticketing.knowledge.dto.RetrievalSearchResponse;
 import com.enterprise.ticketing.knowledge.service.RetrievalService;
-import com.enterprise.ticketing.ticket.dto.TicketUserSummaryResponse;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
@@ -36,89 +37,132 @@ public class TicketRetrieverNode {
     public void execute(AiWorkflowState state) {
         long startedAt = System.nanoTime();
         String query = buildQuery(state);
-        List<AiCitation> citations = retrieveWithFallback(state, query);
-        state.setCitations(citations);
-
-        aiRunLogService.recordSuccess(
-                state.getTicket().id(),
-                state.getWorkflowId(),
-                AiNodeName.RETRIEVER,
-                retrievalServiceProvider.getIfAvailable() == null ? "heuristic-retriever" : "retrieval-service",
-                toLatencyMs(startedAt),
-                0,
-                0,
-                "Retrieved " + citations.size() + " citations",
-                Map.of("query", query, "citations", citations)
-        );
-    }
-
-    private List<AiCitation> retrieveWithFallback(AiWorkflowState state, String query) {
         RetrievalService retrievalService = retrievalServiceProvider.getIfAvailable();
-        if (retrievalService != null) {
-            try {
-                RetrievalSearchRequest request = new RetrievalSearchRequest();
-                request.setQuery(query);
-                request.setTicketId(state.getTicket().id());
-                request.setCategory(resolveRetrievalCategory(state));
-                request.setDepartment(requesterDepartment(state.getTicket().requester()));
-                request.setLimit(applicationProperties.getAi().getRetrievalTopK());
-                request.setSaveCitations(Boolean.FALSE);
-                request.setAiRunId(state.getWorkflowId());
-
-                RetrievalSearchResponse response = retrievalService.search(request);
-                if (response != null && response.results() != null && !response.results().isEmpty()) {
-                    return response.results().stream()
-                            .map(hit -> new AiCitation(
-                                    "RETRIEVAL_SERVICE",
-                                    hit.docId(),
-                                    hit.chunkId(),
-                                    hit.title(),
-                                    hit.contentSnippet(),
-                                    hit.score(),
-                                    hit.citationId() == null
-                                            ? "doc:" + hit.docId() + "#chunk:" + hit.chunkId()
-                                            : "citation:" + hit.citationId()
-                            ))
-                            .limit(applicationProperties.getAi().getRetrievalTopK())
-                            .toList();
-                }
-            } catch (RuntimeException ignored) {
-                // Fall back to deterministic citations so the MVP pipeline keeps running when retrieval is absent or unstable.
-            }
+        if (retrievalService == null) {
+            state.setRetrievalStatus(AiRetrievalStatus.UNAVAILABLE);
+            state.setRetrievalDiagnostics(new AiRetrievalDiagnostics(
+                    "UNAVAILABLE",
+                    0,
+                    0,
+                    Map.of("reason", "RetrievalService bean is not available"),
+                    "RetrievalService bean is not available"
+            ));
+            state.setCitations(List.of());
+            aiRunLogService.recordFailure(
+                    state.getTicket().id(),
+                    state.getWorkflowId(),
+                    AiNodeName.RETRIEVER,
+                    "retrieval",
+                    "retrieval-service",
+                    toLatencyMs(startedAt),
+                    false,
+                    null,
+                    state.getRetrievalStatus().name(),
+                    "RetrievalService bean is not available",
+                    Map.of("query", query)
+            );
+            return;
         }
-        return heuristicCitations(state);
-    }
 
-    private List<AiCitation> heuristicCitations(AiWorkflowState state) {
-        String category = state.getClassification().category();
-        List<AiCitation> citations = new ArrayList<>();
-        switch (category) {
-            case "VPN_ISSUE" -> {
-                citations.add(citation("HEURISTIC_KB", "VPN Certificate Renewal SOP", "Steps to renew expired VPN certificates and re-import client profiles.", 0.93, "kb://vpn/certificate-renewal"));
-                citations.add(citation("HEURISTIC_KB", "Remote Access Troubleshooting Checklist", "Checklist for home-office VPN failures, certificate sync, and endpoint time drift.", 0.88, "kb://vpn/troubleshooting-checklist"));
-                citations.add(citation("HEURISTIC_TICKET", "Recent VPN failure pattern", "Historical incidents show expired device certificates are the highest-frequency cause for this symptom.", 0.79, "ticket-history://vpn/certificate-pattern"));
-            }
-            case "ACCESS_REQUEST" -> {
-                citations.add(citation("HEURISTIC_POLICY", "Production Log Access Approval Policy", "Production and security-sensitive access must be approved before entitlement changes.", 0.95, "kb://access/prod-log-approval"));
-                citations.add(citation("HEURISTIC_KB", "Least Privilege Access SOP", "Use read-only access by default and record the business justification in the approval summary.", 0.87, "kb://access/least-privilege-sop"));
-                citations.add(citation("HEURISTIC_TICKET", "Previous access request template", "Historical tickets show approvers expect resource scope, duration, and incident context.", 0.76, "ticket-history://access/request-template"));
-            }
-            case "PASSWORD_RESET" -> {
-                citations.add(citation("HEURISTIC_KB", "Password Reset Verification SOP", "Identity verification steps required before issuing temporary credentials.", 0.94, "kb://identity/password-reset"));
-                citations.add(citation("HEURISTIC_KB", "MFA Resync Guide", "If reset succeeds but login still fails, resynchronize MFA binding and cached sessions.", 0.81, "kb://identity/mfa-resync"));
-            }
-            default -> {
-                citations.add(citation("HEURISTIC_KB", "IT Service Desk Triage SOP", "Generic triage checklist for confirming affected system, impact scope, and reproducibility.", 0.72, "kb://it/triage-sop"));
-                citations.add(citation("HEURISTIC_TICKET", "Historical incident similarity", "Search adjacent historical tickets for repeated symptoms and successful workarounds.", 0.68, "ticket-history://general/similar-incidents"));
-            }
+        RetrievalSearchRequest request = new RetrievalSearchRequest();
+        request.setQuery(query);
+        request.setTicketId(state.getTicket().id());
+        request.setTicketContext(query);
+        request.setCategory(resolveRetrievalCategory(state));
+        request.setLimit(applicationProperties.getAi().getRetrievalTopK());
+        request.setSaveCitations(Boolean.TRUE);
+        request.setAiRunId(state.getWorkflowId());
+
+        try {
+            RetrievalSearchResponse response = retrievalService.search(request);
+            List<AiCitation> citations = response == null || response.results() == null
+                    ? List.of()
+                    : response.results().stream()
+                    .map(hit -> new AiCitation(
+                            "RETRIEVAL_SERVICE",
+                            hit.docId(),
+                            hit.chunkId(),
+                            hit.title(),
+                            hit.contentSnippet(),
+                            hit.score(),
+                            hit.retrievalScore(),
+                            hit.rerankScore(),
+                            resolveSourceRef(hit.docId(), hit.chunkId(), hit.sourceRef(), hit.citationId()),
+                            hit.metadataMap()
+                    ))
+                    .limit(applicationProperties.getAi().getRetrievalTopK())
+                    .toList();
+
+            AiRetrievalStatus retrievalStatus = citations.isEmpty() ? AiRetrievalStatus.EMPTY : AiRetrievalStatus.HIT;
+            AiRetrievalDiagnostics diagnostics = response == null || response.diagnostics() == null
+                    ? new AiRetrievalDiagnostics(
+                    "VECTOR_WITH_METADATA_FILTERS",
+                    0,
+                    citations.size(),
+                    Map.of(),
+                    citations.isEmpty() ? "Retrieval completed without hits" : "Retrieval completed successfully"
+            )
+                    : new AiRetrievalDiagnostics(
+                    response.diagnostics().retrievalMode(),
+                    response.diagnostics().candidateCount(),
+                    response.diagnostics().returnedCount(),
+                    response.diagnostics().filterSummary(),
+                    citations.isEmpty() ? "Retrieval completed without hits" : "Retrieval completed successfully"
+            );
+
+            state.setCitations(citations);
+            state.setRetrievalStatus(retrievalStatus);
+            state.setRetrievalDiagnostics(diagnostics);
+
+            aiRunLogService.recordSuccess(
+                    state.getTicket().id(),
+                    state.getWorkflowId(),
+                    AiNodeName.RETRIEVER,
+                    "retrieval",
+                    response == null || response.diagnostics() == null ? "retrieval-service" : response.diagnostics().retrievalMode(),
+                    toLatencyMs(startedAt),
+                    0,
+                    0,
+                    false,
+                    null,
+                    retrievalStatus.name(),
+                    "Retrieved " + citations.size() + " citations",
+                    Map.of(
+                            "query", query,
+                            "citations", citations,
+                            "diagnostics", diagnostics
+                    )
+            );
+        } catch (RuntimeException exception) {
+            AiRetrievalDiagnostics diagnostics = new AiRetrievalDiagnostics(
+                    "VECTOR_WITH_METADATA_FILTERS",
+                    0,
+                    0,
+                    payload(
+                            "category", request.getCategory(),
+                            "department", request.getDepartment(),
+                            "ticketId", request.getTicketId()
+                    ),
+                    exception.getMessage()
+            );
+            state.setCitations(List.of());
+            state.setRetrievalStatus(AiRetrievalStatus.ERROR);
+            state.setRetrievalDiagnostics(diagnostics);
+
+            aiRunLogService.recordFailure(
+                    state.getTicket().id(),
+                    state.getWorkflowId(),
+                    AiNodeName.RETRIEVER,
+                    "retrieval",
+                    "retrieval-service",
+                    toLatencyMs(startedAt),
+                    false,
+                    null,
+                    state.getRetrievalStatus().name(),
+                    exception.getMessage(),
+                    payload("query", query, "diagnostics", diagnostics)
+            );
         }
-        return citations.stream()
-                .limit(applicationProperties.getAi().getRetrievalTopK())
-                .toList();
-    }
-
-    private AiCitation citation(String sourceType, String title, String snippet, double score, String sourceRef) {
-        return new AiCitation(sourceType, null, null, title, snippet, score, sourceRef);
     }
 
     private String buildQuery(AiWorkflowState state) {
@@ -134,7 +178,8 @@ public class TicketRetrieverNode {
     }
 
     private String resolveRetrievalCategory(AiWorkflowState state) {
-        String system = state.getExtractedFields().get("system");
+        Map<String, String> extractedFields = state.getExtractedFields();
+        String system = extractedFields == null ? null : extractedFields.get("system");
         if (StringUtils.hasText(system)) {
             return system.trim();
         }
@@ -145,14 +190,7 @@ public class TicketRetrieverNode {
                 return ticketCategory;
             }
         }
-
-        return switch (state.getClassification().category()) {
-            case "VPN_ISSUE" -> "VPN";
-            case "DEV_ENV_ISSUE" -> "DEV_ENV";
-            case "SOFTWARE_LICENSE" -> "SOFTWARE";
-            case "DEVICE_SUPPORT" -> "DEVICE";
-            default -> null;
-        };
+        return null;
     }
 
     private boolean isGenericTicketCategory(String category) {
@@ -163,11 +201,29 @@ public class TicketRetrieverNode {
                 || "SUPPORT".equals(normalized);
     }
 
-    private String requesterDepartment(TicketUserSummaryResponse requester) {
-        return requester == null ? null : requester.department();
+    private String resolveSourceRef(Long documentId, String chunkId, String sourceRef, Long citationId) {
+        if (citationId != null) {
+            return "citation:" + citationId;
+        }
+        if (StringUtils.hasText(sourceRef)) {
+            return sourceRef;
+        }
+        return documentId == null || !StringUtils.hasText(chunkId) ? null : "doc:" + documentId + "#chunk:" + chunkId;
     }
 
     private int toLatencyMs(long startedAt) {
         return (int) Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+    }
+
+    private Map<String, Object> payload(Object... keyValues) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < keyValues.length; i += 2) {
+            Object key = keyValues[i];
+            Object value = keyValues[i + 1];
+            if (key instanceof String stringKey && value != null) {
+                payload.put(stringKey, value);
+            }
+        }
+        return payload;
     }
 }

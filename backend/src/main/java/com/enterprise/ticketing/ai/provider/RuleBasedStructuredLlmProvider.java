@@ -1,6 +1,4 @@
 package com.enterprise.ticketing.ai.provider;
-
-import com.enterprise.ticketing.ai.dto.AiCitation;
 import com.enterprise.ticketing.ticket.domain.TicketPriority;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -32,22 +30,22 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
         String text = normalize(input.title()) + " " + normalize(input.description());
         AiClassificationOutput output;
         if (containsAny(text, "vpn", "证书", "certificate", "remote access")) {
-            output = new AiClassificationOutput("VPN_ISSUE", TicketPriority.MEDIUM, 0.94d);
+            output = new AiClassificationOutput("VPN_ISSUE", TicketPriority.MEDIUM, 0.58d);
         } else if (containsAny(text, "password", "reset password", "forgot password", "密码")) {
-            output = new AiClassificationOutput("PASSWORD_RESET", TicketPriority.MEDIUM, 0.95d);
+            output = new AiClassificationOutput("PASSWORD_RESET", TicketPriority.MEDIUM, 0.56d);
         } else if (containsAny(text, "permission", "access", "权限", "只读", "read only", "生产环境", "prod")) {
             TicketPriority priority = containsAny(text, "prod", "production", "线上", "紧急") ? TicketPriority.HIGH : TicketPriority.MEDIUM;
-            output = new AiClassificationOutput("ACCESS_REQUEST", priority, 0.93d);
+            output = new AiClassificationOutput("ACCESS_REQUEST", priority, 0.6d);
         } else if (containsAny(text, "license", "授权", "office", "outlook", "teams")) {
-            output = new AiClassificationOutput("SOFTWARE_LICENSE", TicketPriority.MEDIUM, 0.86d);
+            output = new AiClassificationOutput("SOFTWARE_LICENSE", TicketPriority.MEDIUM, 0.46d);
         } else if (containsAny(text, "laptop", "device", "设备", "电脑", "hardware")) {
-            output = new AiClassificationOutput("DEVICE_SUPPORT", TicketPriority.MEDIUM, 0.83d);
+            output = new AiClassificationOutput("DEVICE_SUPPORT", TicketPriority.MEDIUM, 0.44d);
         } else if (containsAny(text, "develop", "build", "deploy", "开发环境", "jenkins", "ide")) {
-            output = new AiClassificationOutput("DEV_ENV_ISSUE", TicketPriority.HIGH, 0.82d);
+            output = new AiClassificationOutput("DEV_ENV_ISSUE", TicketPriority.HIGH, 0.42d);
         } else {
-            output = new AiClassificationOutput("GENERAL_IT_SUPPORT", TicketPriority.MEDIUM, 0.68d);
+            output = new AiClassificationOutput("GENERAL_IT_SUPPORT", TicketPriority.MEDIUM, 0.18d);
         }
-        return new StructuredLlmResponse<>(output, defaultModelName(), estimateTokens(text), 32);
+        return new StructuredLlmResponse<>(output, providerType(), defaultModelName(), estimateTokens(text), 32, false, null);
     }
 
     @Override
@@ -59,7 +57,7 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
         populateEnvironmentField(text, fields);
         populateAccessFields(text, fields);
         populateErrorCodeField(text, fields);
-        return new StructuredLlmResponse<>(new AiExtractionOutput(fields), defaultModelName(), estimateTokens(text), 48);
+        return new StructuredLlmResponse<>(new AiExtractionOutput(fields), providerType(), defaultModelName(), estimateTokens(text), 48, false, null);
     }
 
     @Override
@@ -67,16 +65,26 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
         String text = normalize(input.title()) + " " + normalize(input.description());
         boolean requiresApproval = "ACCESS_REQUEST".equals(input.classification().category())
                 || containsAny(text, "permission", "access", "权限", "prod", "production", "管理员");
-        boolean needsHumanHandoff = input.classification().confidence() < 0.75d
+        boolean keywordMatched = input.classification().confidence() >= 0.4d;
+        boolean needsHumanHandoff = !keywordMatched
+                || input.classification().confidence() < 0.65d
                 || input.citations() == null
                 || input.citations().isEmpty()
                 || containsAny(text, "outage", "宕机", "全员", "p1", "紧急");
 
-        List<String> actions = buildSuggestedActions(input.classification().category(), input.extractedFields(), input.citations());
-        String draftReply = buildDraftReply(input.classification().category(), requiresApproval, needsHumanHandoff, actions, input.citations());
+        List<String> actions = buildSuggestedActions(input.classification().category(), input.extractedFields(), keywordMatched);
+        String draftReply = buildDraftReply(input.classification().category(), requiresApproval, needsHumanHandoff, keywordMatched, actions);
 
         AiResolutionOutput output = new AiResolutionOutput(requiresApproval, needsHumanHandoff, draftReply, actions);
-        return new StructuredLlmResponse<>(output, defaultModelName(), estimateTokens(text) + (input.citations() == null ? 0 : input.citations().size() * 24), 96);
+        return new StructuredLlmResponse<>(
+                output,
+                providerType(),
+                defaultModelName(),
+                estimateTokens(text) + (input.citations() == null ? 0 : input.citations().size() * 24),
+                96,
+                false,
+                null
+        );
     }
 
     private void populateSystemField(String text, Map<String, String> fields) {
@@ -93,7 +101,7 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
 
     private void populateIssueType(String category, String text, Map<String, String> fields) {
         if ("VPN_ISSUE".equals(category) && containsAny(text, "证书", "certificate")) {
-            fields.put("issueType", "CERTIFICATE_EXPIRED");
+            fields.put("issueType", "CERTIFICATE_RELATED");
             return;
         }
         if ("PASSWORD_RESET".equals(category)) {
@@ -144,36 +152,32 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
     private List<String> buildSuggestedActions(
             String category,
             Map<String, String> extractedFields,
-            List<AiCitation> citations
+            boolean keywordMatched
     ) {
         List<String> actions = new ArrayList<>();
-        switch (category) {
-            case "VPN_ISSUE" -> {
-                actions.add("Verify whether the local VPN certificate or token has expired.");
-                actions.add("Guide the requester to re-import or renew the VPN certificate.");
-                actions.add("Collect client error screenshots if the issue persists after renewal.");
-            }
-            case "ACCESS_REQUEST" -> {
-                actions.add("Confirm the requested resource scope, access level, and business reason.");
-                actions.add("Route the request into approval before any entitlement change.");
-                actions.add("After approval, ask the owning team to grant least-privilege access.");
-            }
-            case "PASSWORD_RESET" -> {
-                actions.add("Verify requester identity through the standard support checklist.");
-                actions.add("Trigger the password reset SOP and ask the user to rotate the temporary credential.");
-                actions.add("Check whether MFA resynchronization is also required.");
-            }
-            default -> {
-                actions.add("Validate the affected system, environment, and reproducible symptom.");
-                actions.add("Follow the closest SOP or troubleshooting article from retrieval citations.");
-                actions.add("Escalate to a support agent if the recommended steps do not resolve the issue.");
-            }
+        if (!keywordMatched) {
+            actions.add("Check whether the issue is caused by a temporary network or input problem.");
+            actions.add("Capture the exact error message or screenshot and provide it to the support team.");
+            actions.add("Contact a support agent for manual triage.");
+        } else if ("VPN_ISSUE".equals(category)) {
+            actions.add("Check network connectivity and confirm the VPN client can reach the service endpoint.");
+            actions.add("Verify account status and any recent credential or certificate changes.");
+            actions.add("Provide the exact VPN error message or screenshot to the support team.");
+        } else if ("ACCESS_REQUEST".equals(category)) {
+            actions.add("Confirm the requested resource scope and the business reason for access.");
+            actions.add("Prepare approval context before any access change is made.");
+            actions.add("Ask the support team to continue manual review of the request.");
+        } else if ("PASSWORD_RESET".equals(category)) {
+            actions.add("Verify identity through the standard support process.");
+            actions.add("Try the normal password reset path and confirm whether MFA also needs attention.");
+            actions.add("Contact support if login still fails after reset.");
+        } else {
+            actions.add("Check connectivity, account status, and the exact reproduction steps.");
+            actions.add("Capture the error details and submit them for support review.");
+            actions.add("Contact a support agent for manual assistance.");
         }
 
-        if (citations != null && !citations.isEmpty()) {
-            actions.add("Reference knowledge article: " + citations.get(0).title() + ".");
-        }
-        if (extractedFields.containsKey("errorCode")) {
+        if (extractedFields != null && extractedFields.containsKey("errorCode")) {
             actions.add("Search monitoring and ticket history for error code " + extractedFields.get("errorCode") + ".");
         }
         return actions.stream().distinct().limit(5).toList();
@@ -183,21 +187,21 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
             String category,
             boolean requiresApproval,
             boolean needsHumanHandoff,
-            List<String> actions,
-            List<AiCitation> citations
+            boolean keywordMatched,
+            List<String> actions
     ) {
-        StringBuilder builder = new StringBuilder("AI triage suggests category ").append(category).append(". ");
-        if (requiresApproval) {
-            builder.append("This request should go through approval before execution. ");
-        } else {
-            builder.append("Recommended next steps have been prepared for the support handler. ");
+        StringBuilder builder = new StringBuilder("Fallback analysis matched the ticket to category ").append(category).append(". ");
+        if (!keywordMatched) {
+            builder.append("The keyword signal is weak, so this should be treated as a preliminary hint only. ");
         }
-        if (citations != null && !citations.isEmpty()) {
-            builder.append("Most relevant reference: ").append(citations.get(0).title()).append(". ");
+        if (requiresApproval) {
+            builder.append("Any access or permission change should be reviewed before execution. ");
+        } else {
+            builder.append("The following steps are generic troubleshooting guidance. ");
         }
         builder.append("Suggested actions: ").append(String.join(" ", actions.stream().limit(3).toList()));
         if (needsHumanHandoff) {
-            builder.append(" Human follow-up is recommended because confidence or impact risk is not low enough.");
+            builder.append(" Manual support follow-up is recommended.");
         }
         return builder.toString().trim();
     }

@@ -70,6 +70,8 @@
   - AI 建议与节点执行记录
   - 检索引用
   - 审批记录
+  - 展示 AI provider / model / analysis mode / fallback / retrieval status 摘要
+  - 识别 `AI_REVIEW_REQUIRED` 时间线事件并提示人工复核
 
 对应接口：
 
@@ -89,6 +91,7 @@
   - 查看待审批列表
   - 审批通过
   - 审批驳回
+  - 对“为何工单未进入审批流”给出引导文案
 
 对应接口：
 
@@ -103,6 +106,7 @@
   - 文档列表
   - 上传文档
   - 元数据筛选
+  - 展示“embedding 由后端本地优先路由控制”的说明
 
 对应接口：
 
@@ -189,6 +193,19 @@
 
 - 后端暂无用户列表接口，因此工单详情中的“指派处理人”仍使用手工输入 `assigneeId`
 - 检索引用仍以实时检索结果或 AI 返回 citations 为主，没有额外 citation 明细接口
+- 本轮只做 thread3/4/5/6 的最小兼容展示，不新增 AI diagnostics 详情面板或 provider 时间线
+
+### 6.3 Thread 3 / 4 / 5 / 6 兼容点
+
+- thread5 扩展了 AI DTO，前端已同步兼容 `schemaVersion`、`providerType`、`modelName`、`analysisMode`、`fallbackUsed`、`fallbackReason`、`retrievalStatus`、`retrievalDiagnostics`
+- thread3 / thread6 调整了自动审批进入规则
+  - `requiresApproval=true`
+  - 且 `needsHumanHandoff=false`
+  - 且 `fallbackUsed=false`
+  - 且 `retrievalStatus` 不为 `ERROR / UNAVAILABLE`
+  时，后端才会自动发起审批流
+- 若不满足上述条件，后端会写入 `AI_REVIEW_REQUIRED` 事件，前端在工单详情中提示人工复核，审批页不会出现该工单
+- thread4 的 embedding 模型路由由后端控制，当前为本地优先，前端不提供 provider 选择器
 
 ## 7. 本地启动
 
@@ -238,7 +255,7 @@ npm run dev
 1. 用 `employee01` 登录
 2. 创建权限申请类工单
 3. 在工单详情触发 `运行 AI 分析`
-4. 工单进入 `WAITING_APPROVAL`
+4. 若满足自动审批条件，工单进入 `WAITING_APPROVAL`；否则在时间线中显示 `AI_REVIEW_REQUIRED`
 5. 用 `approver01` 或 `admin01` 进入审批页处理
 6. 回到工单详情查看审批记录与状态变化
 7. 进入监控页查看指标变化
@@ -256,7 +273,7 @@ npm run dev
 ### Thread 5 / AI
 
 - 若扩展 AI schema，优先保持 `AiDecisionResult` 向后兼容
-- 当前前端已消费分类、优先级、审批判断、人工接管、建议动作、结构化字段、引用来源、节点明细
+- 当前前端已消费分类、优先级、审批判断、人工接管、provider、模型、analysis mode、fallback、retrieval status、建议动作、结构化字段、引用来源、节点明细
 
 ### Thread 6 / Approval / Observability
 

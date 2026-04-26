@@ -38,10 +38,14 @@ public class AiRunLogService {
             Long ticketId,
             String workflowId,
             AiNodeName nodeName,
+            String providerType,
             String modelName,
             int latencyMs,
             int tokenInput,
             int tokenOutput,
+            boolean fallbackUsed,
+            String fallbackReason,
+            String retrievalStatus,
             String resultSummary,
             Object resultPayload
     ) {
@@ -50,10 +54,14 @@ public class AiRunLogService {
                 workflowId,
                 nodeName,
                 AiRunStatus.SUCCESS,
+                providerType,
                 modelName,
                 latencyMs,
                 tokenInput,
                 tokenOutput,
+                fallbackUsed,
+                fallbackReason,
+                retrievalStatus,
                 resultSummary,
                 resultPayload,
                 null
@@ -64,8 +72,12 @@ public class AiRunLogService {
             Long ticketId,
             String workflowId,
             AiNodeName nodeName,
+            String providerType,
             String modelName,
             int latencyMs,
+            boolean fallbackUsed,
+            String fallbackReason,
+            String retrievalStatus,
             String errorMessage,
             Object resultPayload
     ) {
@@ -74,10 +86,14 @@ public class AiRunLogService {
                 workflowId,
                 nodeName,
                 AiRunStatus.FAILED,
+                providerType,
                 modelName,
                 latencyMs,
                 0,
                 0,
+                fallbackUsed,
+                fallbackReason,
+                retrievalStatus,
                 null,
                 resultPayload,
                 errorMessage
@@ -90,10 +106,14 @@ public class AiRunLogService {
                 entity.getWorkflowId(),
                 entity.getNodeName(),
                 entity.getStatus(),
+                entity.getProviderType(),
                 entity.getModelName(),
                 entity.getLatencyMs(),
                 entity.getTokenInput(),
                 entity.getTokenOutput(),
+                entity.isFallbackUsed(),
+                entity.getFallbackReason(),
+                entity.getRetrievalStatus(),
                 entity.getResultSummary(),
                 entity.getResultPayload(),
                 entity.getErrorMessage(),
@@ -106,10 +126,14 @@ public class AiRunLogService {
             String workflowId,
             AiNodeName nodeName,
             AiRunStatus status,
+            String providerType,
             String modelName,
             int latencyMs,
             int tokenInput,
             int tokenOutput,
+            boolean fallbackUsed,
+            String fallbackReason,
+            String retrievalStatus,
             String resultSummary,
             Object resultPayload,
             String errorMessage
@@ -119,10 +143,14 @@ public class AiRunLogService {
         entity.setWorkflowId(workflowId);
         entity.setNodeName(nodeName);
         entity.setStatus(status);
+        entity.setProviderType(providerType == null ? "unknown" : providerType);
         entity.setModelName(modelName == null ? "unknown" : modelName);
         entity.setLatencyMs(latencyMs);
         entity.setTokenInput(tokenInput);
         entity.setTokenOutput(tokenOutput);
+        entity.setFallbackUsed(fallbackUsed);
+        entity.setFallbackReason(fallbackReason);
+        entity.setRetrievalStatus(retrievalStatus);
         entity.setResultSummary(resultSummary);
         entity.setResultPayload(toJson(resultPayload));
         entity.setErrorMessage(errorMessage);
@@ -132,11 +160,13 @@ public class AiRunLogService {
                 "ticketing.ai.node.runs",
                 "node", nodeName.name(),
                 "status", status.name(),
+                "provider", saved.getProviderType(),
                 "model", saved.getModelName()
         ).increment();
         Timer.builder("ticketing.ai.node.latency")
                 .tag("node", nodeName.name())
                 .tag("status", status.name())
+                .tag("provider", saved.getProviderType())
                 .tag("model", saved.getModelName())
                 .register(meterRegistry)
                 .record(Duration.ofMillis(latencyMs));

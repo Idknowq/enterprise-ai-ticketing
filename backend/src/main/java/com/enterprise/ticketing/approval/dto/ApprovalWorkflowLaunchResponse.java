@@ -5,6 +5,7 @@ public record ApprovalWorkflowLaunchResponse(
         String workflowId,
         boolean started,
         boolean alreadyWaitingApproval,
+        boolean manualReviewRequired,
         String message
 ) {
 }

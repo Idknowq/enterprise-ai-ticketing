@@ -14,6 +14,9 @@ public class RetrievalSearchRequest {
     @Schema(description = "Optional ticket id; when query is omitted the service will build the query from ticket title and description")
     private Long ticketId;
 
+    @Schema(description = "Optional AI-prepared ticket context used for downstream retrieval diagnostics or hybrid search orchestration")
+    private String ticketContext;
+
     @Schema(description = "Optional category filter", example = "VPN")
     private String category;
 
@@ -52,6 +55,14 @@ public class RetrievalSearchRequest {
 
     public String getCategory() {
         return category;
+    }
+
+    public String getTicketContext() {
+        return ticketContext;
+    }
+
+    public void setTicketContext(String ticketContext) {
+        this.ticketContext = ticketContext;
     }
 
     public void setCategory(String category) {

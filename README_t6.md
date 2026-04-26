@@ -41,12 +41,37 @@ MVP 只支持单模板两级审批：
 当前 `POST /api/ai/tickets/{id}/run` 已接入审批 workflow：
 
 1. Thread 5 的 `AiOrchestrationService` 产出 `AiDecisionResult`
-2. 若 `requiresApproval=false`，本模块不启动 workflow
-3. 若 `requiresApproval=true`，`ApprovalWorkflowService.handleAiDecision(...)` 启动 Temporal workflow
-4. workflow 第一个 activity 会：
+2. `TicketAiDecisionService` 会先评估 AI 结果是否允许自动流转
+3. 若出现以下任一条件，则不会自动启动审批 workflow，而是写入 `AI_REVIEW_REQUIRED` 事件，转为人工复核：
+   - `needsHumanHandoff=true`
+   - `fallbackUsed=true`
+   - `retrievalStatus=ERROR`
+   - `retrievalStatus=UNAVAILABLE`
+4. 只有当：
+   - `requiresApproval=true`
+   - 且未命中上述人工复核条件
+   时，`ApprovalWorkflowService.handleAiDecision(...)` 才会启动 Temporal workflow
+5. workflow 第一个 activity 会：
    - 创建首个审批记录
    - 将工单推进到 `WAITING_APPROVAL`
    - 写入 `WORKFLOW_STARTED` / `APPROVAL_REQUESTED` 事件
+
+### 3.1.1 当前消费的 AI 契约字段
+
+Workflow / Approval / Observability 当前显式消费以下 AI 字段：
+
+- `requiresApproval`
+- `needsHumanHandoff`
+- `fallbackUsed`
+- `fallbackReason`
+- `retrievalStatus`
+- `retrievalDiagnostics`
+
+其中：
+
+- `requiresApproval` 决定是否具备进入审批流的候选资格
+- `needsHumanHandoff`、`fallbackUsed`、`retrievalStatus=ERROR|UNAVAILABLE` 会阻断自动流转
+- `fallbackReason` 和 `retrievalDiagnostics` 会进入事件日志与观测信息，方便排障和人工复核
 
 ### 3.2 挂起 / 恢复
 
@@ -100,7 +125,8 @@ Temporal workflow 定义在：
 
 - `decisionResult.ticketId()` 必填
 - `decisionResult.workflowId()` 必填
-- `decisionResult.requiresApproval()` 为 `true` 时才会真正启动 workflow
+- `decisionResult.requiresApproval()` 为 `true` 仅代表“候选需要审批”
+- 若 `needsHumanHandoff=true`、`fallbackUsed=true` 或 `retrievalStatus=ERROR|UNAVAILABLE`，则不会自动启动 workflow
 
 ### 5.2 审批接口
 
@@ -128,6 +154,7 @@ Temporal workflow 定义在：
 - `backend/src/main/java/com/enterprise/ticketing/approval/service/ApprovalWorkflowService.java`
 - `backend/src/main/java/com/enterprise/ticketing/approval/service/ApprovalCommandService.java`
 - `backend/src/main/java/com/enterprise/ticketing/approval/controller/ApprovalController.java`
+- `backend/src/main/java/com/enterprise/ticketing/approval/service/impl/ApprovalWorkflowServiceImpl.java`
 
 ### Workflow / Temporal
 
@@ -135,6 +162,12 @@ Temporal workflow 定义在：
 - `backend/src/main/java/com/enterprise/ticketing/workflow/ApprovalWorkflow.java`
 - `backend/src/main/java/com/enterprise/ticketing/workflow/impl/ApprovalWorkflowImpl.java`
 - `backend/src/main/java/com/enterprise/ticketing/workflow/impl/ApprovalWorkflowActivitiesImpl.java`
+
+### AI 决策评估桥接
+
+- `backend/src/main/java/com/enterprise/ticketing/ticket/service/TicketAiDecisionService.java`
+- `backend/src/main/java/com/enterprise/ticketing/ticket/service/impl/DefaultTicketAiDecisionService.java`
+- `backend/src/main/java/com/enterprise/ticketing/ticket/dto/TicketAiDecisionAssessment.java`
 
 ### Observability
 
@@ -153,6 +186,8 @@ Prometheus 指标覆盖：
 - `ticketing.ai.orchestration.latency`
 - `ticketing.ai.node.runs`
 - `ticketing.ai.node.latency`
+- `ticketing.workflow.ai.decision.handled`
+- `ticketing.workflow.ai.decision.manual_review_required`
 - `ticketing.workflow.approval.workflows.started`
 - `ticketing.workflow.approval.workflows.completed`
 - `ticketing.workflow.approval.stage.opened`
@@ -254,8 +289,13 @@ curl -X POST "$BASE_URL/api/ai/tickets/$TICKET_ID/run" \
 预期：
 
 - 返回的 AI 结果中 `requiresApproval` 为 `true`
-- 工单状态会进入 `WAITING_APPROVAL`
-- Temporal 中会创建一个 `approval-ticket-<ticketId>-<aiWorkflowId>` workflow
+- 若同时满足 `needsHumanHandoff=false`、`fallbackUsed=false`、`retrievalStatus` 不为 `ERROR/UNAVAILABLE`：
+  - 工单状态会进入 `WAITING_APPROVAL`
+  - Temporal 中会创建一个 `approval-ticket-<ticketId>-<aiWorkflowId>` workflow
+- 若命中人工复核条件：
+  - 不会自动进入 `WAITING_APPROVAL`
+  - 不会自动创建审批 workflow
+  - 工单时间线中会出现 `AI_REVIEW_REQUIRED`
 
 ### 8.5 查看待审批列表
 
@@ -360,6 +400,13 @@ curl "$BASE_URL/api/tickets/$TICKET_ID" \
 
 - `data.ticket.status == "WAITING_APPROVAL"`，在第一阶段审批前成立
 
+前提：
+
+- `requiresApproval=true`
+- `needsHumanHandoff=false`
+- `fallbackUsed=false`
+- `retrievalStatus` 不为 `ERROR` 或 `UNAVAILABLE`
+
 ### 9.2 验证审批挂起与恢复
 
 先查询待审批项：
@@ -437,8 +484,38 @@ curl "$BASE_URL/api/observability/dashboard" \
 - `averageRetrievalLatencyMs`
 - `averageApprovalWaitMs`
 - `pendingApprovals`
+- `aiManualReviewRequiredCount`
 
-### 9.6 验证 Prometheus 指标
+### 9.6 验证人工复核阻断逻辑
+
+如果 Thread 5 返回的 AI 结果包含以下任一条件：
+
+- `needsHumanHandoff=true`
+- `fallbackUsed=true`
+- `retrievalStatus=ERROR`
+- `retrievalStatus=UNAVAILABLE`
+
+则预期行为为：
+
+- `ApprovalWorkflowService` 返回 `manualReviewRequired=true`
+- 不自动启动 Temporal workflow
+- 工单时间线新增 `AI_REVIEW_REQUIRED`
+
+验证工单时间线：
+
+```bash
+curl "$BASE_URL/api/tickets/$TICKET_ID" \
+  -H "Authorization: Bearer $EMPLOYEE_TOKEN"
+```
+
+如果安装了 `jq`，可直接筛选事件：
+
+```bash
+curl -s "$BASE_URL/api/tickets/$TICKET_ID" \
+  -H "Authorization: Bearer $EMPLOYEE_TOKEN" | jq '.data.timeline[] | select(.eventType=="AI_REVIEW_REQUIRED")'
+```
+
+### 9.7 验证 Prometheus 指标
 
 ```bash
 curl "$BASE_URL/actuator/prometheus" | rg 'ticketing_(ticket|ai|workflow)_'
@@ -450,7 +527,13 @@ curl "$BASE_URL/actuator/prometheus" | rg 'ticketing_(ticket|ai|workflow)_'
 curl "$BASE_URL/actuator/prometheus" | grep 'ticketing_'
 ```
 
-### 9.7 验证 Temporal / Jaeger / Grafana
+关注新增指标：
+
+```bash
+curl "$BASE_URL/actuator/prometheus" | grep 'ticketing_workflow_ai_decision'
+```
+
+### 9.8 验证 Temporal / Jaeger / Grafana
 
 本地默认地址：
 

@@ -116,9 +116,12 @@ public class DeepSeekStructuredLlmProvider implements StructuredLlmProvider {
             JsonNode usageNode = root.path("usage");
             return new StructuredLlmResponse<>(
                     output,
+                    providerType(),
                     defaultModelName(),
                     usageNode.path("prompt_tokens").asInt(0),
-                    usageNode.path("completion_tokens").asInt(0)
+                    usageNode.path("completion_tokens").asInt(0),
+                    false,
+                    null
             );
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to parse structured LLM response", exception);

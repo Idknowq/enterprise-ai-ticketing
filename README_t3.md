@@ -141,12 +141,14 @@
 - `backend/src/main/java/com/enterprise/ticketing/ticket/service/TicketEventService.java`
 - `backend/src/main/java/com/enterprise/ticketing/ticket/service/TicketCommentService.java`
 - `backend/src/main/java/com/enterprise/ticketing/ticket/service/TicketAssignmentService.java`
+- `backend/src/main/java/com/enterprise/ticketing/ticket/service/TicketAiDecisionService.java`
 
 ### Service 实现
 
 - `backend/src/main/java/com/enterprise/ticketing/ticket/service/impl/TicketCoreServiceImpl.java`
 - `backend/src/main/java/com/enterprise/ticketing/ticket/service/impl/TicketQueryServiceImpl.java`
 - `backend/src/main/java/com/enterprise/ticketing/ticket/service/impl/TicketAccessPolicy.java`
+- `backend/src/main/java/com/enterprise/ticketing/ticket/service/impl/DefaultTicketAiDecisionService.java`
 
 ### API 控制器
 
@@ -164,6 +166,32 @@
 - `POST /api/tickets/{id}/status`
 
 所有接口统一返回 `Result<T>`，并要求携带 JWT。
+
+## 6.1 AI 决策消费规则
+
+Ticket Core 当前不再只根据 `draftReply` 或空 `citations` 判断是否继续自动流转，而是通过 `TicketAiDecisionService` 显式消费 Thread 5 升级后的 `AiDecisionResult` 字段。
+
+当前重点消费：
+
+- `needsHumanHandoff`
+- `fallbackUsed`
+- `fallbackReason`
+- `retrievalStatus`
+- `retrievalDiagnostics`
+
+当前规则：
+
+- 若 `needsHumanHandoff=true`，则要求人工复核
+- 若 `fallbackUsed=true`，则要求人工复核
+- 若 `retrievalStatus=ERROR` 或 `UNAVAILABLE`，则要求人工复核
+- 若以上风险均不存在，才允许继续自动流转
+- `EMPTY` 不再被误判为“AI 未运行”，是否人工介入由 `needsHumanHandoff` 和上述风险字段共同决定
+
+当前事件日志约定：
+
+- 当 AI 结果被判定为需要人工复核时，写入 `ticket_events`
+- 事件类型为 `AI_REVIEW_REQUIRED`
+- `event_payload` 中会保留 `fallbackUsed / fallbackReason / retrievalStatus / retrievalDiagnostics / reasons`
 
 ## 7. 如何使用
 
@@ -640,10 +668,16 @@ mvn -q -DskipTests compile
 
 - 使用 `TicketQueryService` 读取工单内容
 - AI 只输出结构化决策，不直接改数据库
+- 若要判断 Ticket Core 是否允许继续自动流转，优先调用：
+  - `TicketAiDecisionService.assessDecision(decisionResult)`
 - 当 AI 进入处理中，可调用：
   - `TicketService.markAiProcessing(ticketId, summary)`
-- 若 AI 判断需要审批，可调用：
-  - `TicketService.markWaitingApproval(ticketId, summary)`
+- 若 AI 判断需要审批，不要只凭 `draftReply` 或空 `citations` 决定下一步，应先结合：
+  - `fallbackUsed`
+  - `fallbackReason`
+  - `retrievalStatus`
+  - `retrievalDiagnostics`
+  - `needsHumanHandoff`
 - 如需记录 AI 侧补充事件，可通过：
   - `TicketEventService.recordEvent(...)`
 
@@ -651,11 +685,16 @@ mvn -q -DskipTests compile
 
 - 不要直接改 `tickets.status`
 - 不要跳过状态机
+- 不要把空 `citations` 直接当成 AI 未执行或一定失败
 
 ### 9.3 Thread 6：审批与工作流
 
 建议方式：
 
+- 启动审批前，先调用：
+  - `TicketAiDecisionService.assessDecision(decisionResult)`
+- 只有当 `assessment.approvalFlowAllowed=true` 时，才继续自动发起审批
+- 若 `assessment.manualReviewRequired=true`，应停止自动流转，并保留人工复核入口
 - 工作流挂起时调用 `TicketService.markWaitingApproval(...)`
 - 审批通过后，由 Workflow 层决定下一步是：
   - `updateStatus(ticketId, IN_PROGRESS, reason)`
@@ -692,6 +731,7 @@ mvn -q -DskipTests compile
 - `TicketEventService`
 - `TicketCommentService`
 - `TicketAssignmentService`
+- `TicketAiDecisionService`
 
 建议优先使用的方法：
 
@@ -703,6 +743,7 @@ mvn -q -DskipTests compile
 - `markWaitingApproval`
 - `markResolved`
 - `markRejected`
+- `assessDecision`
 
 ## 11. 当前限制与后续扩展点
 
@@ -710,7 +751,7 @@ mvn -q -DskipTests compile
 
 - 更细粒度的字段编辑规则
 - SLA、升级、撤销、重开等更复杂状态语义
-- 审批专属事件类型
+- 更丰富的 AI 专属事件类型和自动流转策略
 - AI 运行记录与 citation 聚合展示
 - 更复杂的权限策略和部门级隔离
 

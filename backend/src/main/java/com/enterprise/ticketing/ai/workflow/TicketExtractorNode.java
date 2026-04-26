@@ -31,15 +31,29 @@ public class TicketExtractorNode {
                     )
             );
             state.setExtractedFields(response.output().extractedFields());
+            state.putNodeExecutionDetails(
+                    AiNodeName.EXTRACTOR,
+                    new AiNodeExecutionDetails(
+                            AiNodeName.EXTRACTOR,
+                            response.providerType(),
+                            response.modelName(),
+                            response.fallbackUsed(),
+                            response.fallbackReason()
+                    )
+            );
             int latencyMs = toLatencyMs(startedAt);
             aiRunLogService.recordSuccess(
                     state.getTicket().id(),
                     state.getWorkflowId(),
                     AiNodeName.EXTRACTOR,
+                    response.providerType(),
                     response.modelName(),
                     latencyMs,
                     response.tokenInput(),
                     response.tokenOutput(),
+                    response.fallbackUsed(),
+                    response.fallbackReason(),
+                    null,
                     "Extracted " + state.getExtractedFields().size() + " fields",
                     response.output()
             );
@@ -48,8 +62,12 @@ public class TicketExtractorNode {
                     state.getTicket().id(),
                     state.getWorkflowId(),
                     AiNodeName.EXTRACTOR,
+                    llmProviderRouter.providerType(),
                     llmProviderRouter.defaultModelName(),
                     toLatencyMs(startedAt),
+                    false,
+                    null,
+                    null,
                     exception.getMessage(),
                     null
             );

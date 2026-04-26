@@ -22,8 +22,9 @@ class RuleBasedStructuredLlmProviderTest {
         );
 
         assertThat(response.output().category()).isEqualTo("VPN_ISSUE");
+        assertThat(response.providerType()).isEqualTo("rule-based");
         assertThat(response.output().priority()).isEqualTo(TicketPriority.MEDIUM);
-        assertThat(response.output().confidence()).isGreaterThan(0.9d);
+        assertThat(response.output().confidence()).isBetween(0.4d, 0.7d);
     }
 
     @Test
@@ -56,13 +57,16 @@ class RuleBasedStructuredLlmProviderTest {
                                 "resourceType", "LOGS"
                         ),
                         List.of(new AiCitation(
-                                "HEURISTIC_POLICY",
+                                "RETRIEVAL_SERVICE",
                                 null,
                                 null,
                                 "Production Log Access Approval Policy",
                                 "Production access must be approved before entitlement changes.",
                                 0.95d,
-                                "kb://access/prod-log-approval"
+                                0.95d,
+                                null,
+                                "kb://access/prod-log-approval",
+                                java.util.Map.of("category", "ACCESS")
                         ))
                 )
         );
@@ -70,6 +74,23 @@ class RuleBasedStructuredLlmProviderTest {
         assertThat(response.output().requiresApproval()).isTrue();
         assertThat(response.output().needsHumanHandoff()).isFalse();
         assertThat(response.output().suggestedActions()).isNotEmpty();
-        assertThat(response.output().draftReply()).contains("approval");
+        assertThat(response.output().draftReply()).contains("reviewed");
+    }
+
+    @Test
+    void fallbackResolutionWithoutKeywordMatchRequiresHumanHandoff() {
+        StructuredLlmResponse<AiResolutionOutput> response = provider.resolve(
+                new AiResolutionInput(
+                        "系统异常",
+                        "打开页面后看起来不太对，请帮忙看看。",
+                        new AiClassificationOutput("GENERAL_IT_SUPPORT", TicketPriority.MEDIUM, 0.18d),
+                        java.util.Map.of(),
+                        List.of()
+                )
+        );
+
+        assertThat(response.output().needsHumanHandoff()).isTrue();
+        assertThat(response.output().draftReply()).contains("preliminary hint");
+        assertThat(response.output().suggestedActions()).anyMatch(action -> action.contains("support"));
     }
 }

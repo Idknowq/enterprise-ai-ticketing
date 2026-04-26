@@ -43,6 +43,9 @@ public class AiRunEntity {
     @Column(name = "status", nullable = false, length = 32)
     private AiRunStatus status;
 
+    @Column(name = "provider_type", nullable = false, length = 64)
+    private String providerType;
+
     @Column(name = "model_name", nullable = false, length = 128)
     private String modelName;
 
@@ -64,6 +67,15 @@ public class AiRunEntity {
 
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
+
+    @Column(name = "fallback_used", nullable = false)
+    private boolean fallbackUsed;
+
+    @Column(name = "fallback_reason", columnDefinition = "TEXT")
+    private String fallbackReason;
+
+    @Column(name = "retrieval_status", length = 32)
+    private String retrievalStatus;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -106,6 +118,14 @@ public class AiRunEntity {
 
     public String getModelName() {
         return modelName;
+    }
+
+    public String getProviderType() {
+        return providerType;
+    }
+
+    public void setProviderType(String providerType) {
+        this.providerType = providerType;
     }
 
     public void setModelName(String modelName) {
@@ -158,6 +178,30 @@ public class AiRunEntity {
 
     public void setErrorMessage(String errorMessage) {
         this.errorMessage = errorMessage;
+    }
+
+    public boolean isFallbackUsed() {
+        return fallbackUsed;
+    }
+
+    public void setFallbackUsed(boolean fallbackUsed) {
+        this.fallbackUsed = fallbackUsed;
+    }
+
+    public String getFallbackReason() {
+        return fallbackReason;
+    }
+
+    public void setFallbackReason(String fallbackReason) {
+        this.fallbackReason = fallbackReason;
+    }
+
+    public String getRetrievalStatus() {
+        return retrievalStatus;
+    }
+
+    public void setRetrievalStatus(String retrievalStatus) {
+        this.retrievalStatus = retrievalStatus;
     }
 
     public Instant getCreatedAt() {

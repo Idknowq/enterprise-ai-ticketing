@@ -84,17 +84,41 @@ public class DefaultTelemetryService implements TelemetryService {
     }
 
     @Override
-    public void recordAiDecisionHandling(boolean requiresApproval, boolean startedWorkflow, long durationMs) {
+    public void recordAiDecisionHandling(
+            boolean requiresApproval,
+            boolean needsHumanHandoff,
+            boolean fallbackUsed,
+            String retrievalStatus,
+            boolean startedWorkflow,
+            boolean manualReviewRequired,
+            long durationMs
+    ) {
         meterRegistry.counter(
                 "ticketing.workflow.ai.decision.handled",
                 "requires_approval", Boolean.toString(requiresApproval),
-                "started_workflow", Boolean.toString(startedWorkflow)
+                "needs_human_handoff", Boolean.toString(needsHumanHandoff),
+                "fallback_used", Boolean.toString(fallbackUsed),
+                "retrieval_status", normalizeRetrievalStatus(retrievalStatus),
+                "started_workflow", Boolean.toString(startedWorkflow),
+                "manual_review_required", Boolean.toString(manualReviewRequired)
         ).increment();
         Timer.builder("ticketing.workflow.ai.decision.latency")
                 .tag("requires_approval", Boolean.toString(requiresApproval))
+                .tag("needs_human_handoff", Boolean.toString(needsHumanHandoff))
+                .tag("fallback_used", Boolean.toString(fallbackUsed))
+                .tag("retrieval_status", normalizeRetrievalStatus(retrievalStatus))
                 .tag("started_workflow", Boolean.toString(startedWorkflow))
+                .tag("manual_review_required", Boolean.toString(manualReviewRequired))
                 .register(meterRegistry)
                 .record(Duration.ofMillis(durationMs));
+        if (manualReviewRequired) {
+            meterRegistry.counter(
+                    "ticketing.workflow.ai.decision.manual_review_required",
+                    "requires_approval", Boolean.toString(requiresApproval),
+                    "fallback_used", Boolean.toString(fallbackUsed),
+                    "retrieval_status", normalizeRetrievalStatus(retrievalStatus)
+            ).increment();
+        }
     }
 
     @Override
@@ -166,6 +190,7 @@ public class DefaultTelemetryService implements TelemetryService {
                 nullSafe(aiRunRepository.averageLatencyByNodeAndStatus(AiNodeName.RETRIEVER, AiRunStatus.SUCCESS)),
                 nullSafe(approvalRepository.averageDecisionLatencyMs()),
                 approvalRepository.countByStatus(ApprovalStatus.PENDING),
+                counterValue("ticketing.workflow.ai.decision.manual_review_required"),
                 counterValue("ticketing.workflow.approval.failures"),
                 counterValue("ticketing.workflow.approval.retries")
         );
@@ -192,5 +217,9 @@ public class DefaultTelemetryService implements TelemetryService {
 
     private double nullSafe(Double value) {
         return value == null ? 0D : value;
+    }
+
+    private String normalizeRetrievalStatus(String retrievalStatus) {
+        return StringUtils.hasText(retrievalStatus) ? retrievalStatus.trim().toUpperCase() : "UNKNOWN";
     }
 }

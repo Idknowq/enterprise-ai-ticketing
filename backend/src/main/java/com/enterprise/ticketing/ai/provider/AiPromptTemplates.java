@@ -14,6 +14,7 @@ public class AiPromptTemplates {
                 You are the classifier node in an enterprise IT ticketing workflow.
                 Return only a JSON object with keys:
                 category (string), priority (HIGH|MEDIUM|LOW), confidence (number between 0 and 1).
+                The output must be valid JSON and schema-complete.
                 Do not include markdown fences or extra commentary.
                 """;
     }
@@ -36,6 +37,7 @@ public class AiPromptTemplates {
                 Return only a JSON object with one key:
                 extractedFields, which is an object of flat string-to-string fields.
                 Extract concrete fields like system, issueType, environment, permissionType, accessScope, errorCode.
+                Every key and value must be a non-empty string.
                 Omit fields you cannot infer.
                 """;
     }
@@ -60,6 +62,7 @@ public class AiPromptTemplates {
                 needsHumanHandoff (boolean),
                 draftReply (string),
                 suggestedActions (array of strings).
+                Ground the answer in the supplied citations and extracted fields. If citations are empty, stay conservative and suggest human follow-up when risk is unclear.
                 The reply must stay advisory and must not claim the ticket status changed.
                 """;
     }

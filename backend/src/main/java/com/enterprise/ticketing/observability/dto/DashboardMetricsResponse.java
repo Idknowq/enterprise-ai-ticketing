@@ -10,6 +10,7 @@ public record DashboardMetricsResponse(
         double averageRetrievalLatencyMs,
         double averageApprovalWaitMs,
         long pendingApprovals,
+        double aiManualReviewRequiredCount,
         double workflowFailureCount,
         double workflowRetryCount
 ) {

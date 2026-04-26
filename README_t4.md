@@ -42,7 +42,7 @@
 - 引用表 `citations`
 - 文档解析器注册与自动识别
 - 文本切分与摘要 snippet 生成
-- 本地 `EmbeddingProvider` 抽象与默认 hashing 实现
+- 本地 Ollama / 商用 OpenAI 的 `EmbeddingProvider` 抽象与路由
 - Qdrant collection 自动创建、向量 upsert、带 payload 的过滤检索
 - 按 `department` / `accessLevel` 做权限兼容过滤
 - 检索结果统一 schema 输出
@@ -143,8 +143,10 @@
 - `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/RetrievalServiceImpl.java`
 - `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/CitationServiceImpl.java`
 - `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/DocumentAccessPolicy.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/RoutingEmbeddingProvider.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/LocalOllamaEmbeddingProvider.java`
+- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/OpenAiEmbeddingProvider.java`
 - `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/TextChunker.java`
-- `backend/src/main/java/com/enterprise/ticketing/knowledge/service/impl/HashingEmbeddingProvider.java`
 
 ### 解析器
 
@@ -267,6 +269,7 @@ Authorization: Bearer <token>
 
 - `query`: 原始检索文本，可选
 - `ticketId`: 工单 ID，可选；当 `query` 为空时使用
+- `ticketContext`: AI 侧准备的工单上下文，可选；当前用于兼容 Thread 5 升级后的契约
 - `category`: 可选元数据过滤
 - `department`: 可选元数据过滤
 - `accessLevel`: 可选元数据过滤
@@ -318,6 +321,17 @@ curl -X POST http://localhost:8080/api/retrieval/search \
   "data": {
     "query": "VPN 连接失败 证书失效",
     "ticketId": 123,
+    "diagnostics": {
+      "retrievalMode": "VECTOR_WITH_METADATA_FILTERS",
+      "candidateCount": 3,
+      "returnedCount": 3,
+      "filterSummary": {
+        "category": "VPN",
+        "departments": ["IT"],
+        "accessLevels": ["INTERNAL", "PUBLIC"],
+        "ticketContextProvided": true
+      }
+    },
     "results": [
       {
         "docId": 1,
@@ -325,7 +339,19 @@ curl -X POST http://localhost:8080/api/retrieval/search \
         "chunkId": "doc-1-chunk-0",
         "contentSnippet": "当用户在远程办公时遇到证书失效...",
         "score": 0.82,
+        "retrievalScore": 0.82,
+        "rerankScore": null,
+        "sourceRef": "citation:10",
         "metadata": {
+          "docId": 1,
+          "title": "VPN 证书失效处理 SOP",
+          "category": "VPN",
+          "department": "IT",
+          "accessLevel": "INTERNAL",
+          "version": "v1.0",
+          "updatedAt": "2026-04-16T00:00:00Z"
+        },
+        "metadataMap": {
           "docId": 1,
           "title": "VPN 证书失效处理 SOP",
           "category": "VPN",
@@ -341,6 +367,15 @@ curl -X POST http://localhost:8080/api/retrieval/search \
   }
 }
 ```
+
+返回字段补充说明：
+
+- `score` 保持为对外统一总分，兼容旧调用方
+- `retrievalScore` 是当前原始检索分数，Thread 5 应优先消费
+- `rerankScore` 为后续 rerank 预留字段，当前 MVP 通常为 `null`
+- `sourceRef` 在已落 citation 时优先返回 `citation:<id>`
+- `metadataMap` 提供给 AI 模块直接消费的扁平 metadata
+- `diagnostics` 用于空结果诊断、AI 运行审计和后续可观测性对接
 
 ## 7. 权限与过滤规则
 
@@ -387,13 +422,16 @@ curl -X POST http://localhost:8080/api/retrieval/search \
 当前实现：
 
 - 接口：`EmbeddingProvider`
-- 默认实现：`HashingEmbeddingProvider`
+- 对外唯一注入实现：`RoutingEmbeddingProvider`
+- 本地 provider：`LocalOllamaEmbeddingProvider`
+- 商用 provider：`OpenAiEmbeddingProvider`
 
 说明：
 
-- 当前是本地 hashing 向量化实现，优点是无外部模型依赖、便于本地开发和链路联调
-- 这是一个占位但可运行的实现，不代表最终生产 embedding 方案
-- 后续如需接入真实模型，只需新增或替换 `EmbeddingProvider` 实现，不需要改上传/检索主链路
+- 当前默认走本地 Ollama `nomic-embed-text:latest`
+- 已预留商用 OpenAI `text-embedding-3-large` 接入能力
+- 上传文档和检索查询都只依赖统一 `EmbeddingProvider`，不会把 provider 细节泄漏到主链路
+- 如需切换模型，优先切换 `app.knowledge.embedding.routing.mode` 和对应 provider 配置
 
 ## 8.2 QdrantClient
 
@@ -407,7 +445,7 @@ curl -X POST http://localhost:8080/api/retrieval/search \
 当前 collection 配置：
 
 - `app.knowledge.collection-name`
-- `app.knowledge.embedding-dimension`
+- 当前活动 embedding provider 的 `dimension()`
 
 当前 payload 字段包括：
 
@@ -424,6 +462,12 @@ curl -X POST http://localhost:8080/api/retrieval/search \
 
 这些字段支持检索结果返回和元数据过滤。
 
+维度一致性规则：
+
+- Qdrant collection 的 vector size 由当前活动 embedding provider 决定
+- 若 collection 已存在但维度与当前模型不一致，服务会直接报错
+- 切换本地/商用模型前，应先清理或重建对应 Qdrant collection
+
 ## 9. 配置项
 
 当前新增配置位于 `app.knowledge.*`：
@@ -435,8 +479,9 @@ curl -X POST http://localhost:8080/api/retrieval/search \
 - `app.knowledge.default-top-k`
 - `app.knowledge.max-top-k`
 - `app.knowledge.global-department`
-- `app.knowledge.embedding.provider`
-- `app.knowledge.embedding.model`
+- `app.knowledge.embedding.routing.mode`
+- `app.knowledge.embedding.local.*`
+- `app.knowledge.embedding.commercial.*`
 
 可通过环境变量覆盖：
 
@@ -447,8 +492,44 @@ curl -X POST http://localhost:8080/api/retrieval/search \
 - `APP_KNOWLEDGE_DEFAULT_TOP_K`
 - `APP_KNOWLEDGE_MAX_TOP_K`
 - `APP_KNOWLEDGE_GLOBAL_DEPARTMENT`
-- `APP_KNOWLEDGE_EMBEDDING_PROVIDER`
-- `APP_KNOWLEDGE_EMBEDDING_MODEL`
+- `APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE`
+- `APP_KNOWLEDGE_EMBEDDING_LOCAL_ENABLED`
+- `APP_KNOWLEDGE_EMBEDDING_LOCAL_PROVIDER_TYPE`
+- `APP_KNOWLEDGE_EMBEDDING_LOCAL_MODEL`
+- `APP_KNOWLEDGE_EMBEDDING_LOCAL_BASE_URL`
+- `APP_KNOWLEDGE_EMBEDDING_LOCAL_EMBEDDING_PATH`
+- `APP_KNOWLEDGE_EMBEDDING_LOCAL_TIMEOUT`
+- `APP_KNOWLEDGE_EMBEDDING_LOCAL_DIMENSION`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_ENABLED`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_PROVIDER_TYPE`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_MODEL`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_BASE_URL`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_API_KEY`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_EMBEDDING_PATH`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_TIMEOUT`
+- `APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_DIMENSION`
+
+推荐默认值：
+
+```bash
+APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE=local
+APP_KNOWLEDGE_EMBEDDING_LOCAL_MODEL=nomic-embed-text:latest
+APP_KNOWLEDGE_EMBEDDING_LOCAL_BASE_URL=http://127.0.0.1:11434
+APP_KNOWLEDGE_EMBEDDING_LOCAL_EMBEDDING_PATH=/api/embeddings
+APP_KNOWLEDGE_EMBEDDING_LOCAL_DIMENSION=768
+```
+
+若切换商用 OpenAI：
+
+```bash
+APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE=commercial
+APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_ENABLED=true
+APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_MODEL=text-embedding-3-large
+APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_BASE_URL=https://api.openai.com
+APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_API_KEY=your-api-key
+APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_EMBEDDING_PATH=/v1/embeddings
+APP_KNOWLEDGE_EMBEDDING_COMMERCIAL_DIMENSION=3072
+```
 
 ## 10. 如何启动与使用
 
@@ -606,14 +687,28 @@ curl "$BASE_URL/api/documents?page=0&size=20&category=VPN" \
 
 ### 10.6 直接按文本检索
 
-使用任意已登录用户调用 `/api/retrieval/search`。
+如果你上传的文档是 `department=IT`，请优先使用 `support01` 或 `admin01` 验证。普通员工 `employee01` 默认部门是 `GENERAL`，检索 `IT` 文档时会被权限过滤挡住。
+
+先获取支持人员 token：
+
+```bash
+SUPPORT_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"username\": \"$SUPPORT_USERNAME\",
+    \"password\": \"$SUPPORT_PASSWORD\"
+  }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+
+echo "$SUPPORT_TOKEN"
+```
 
 ```bash
 curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $EMPLOYEE_TOKEN" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "query": "今天在家连接 VPN 失败，提示证书失效",
+    "ticketContext": "title: VPN 证书失效，无法连接; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired",
     "category": "VPN",
     "limit": 5,
     "saveCitations": true,
@@ -627,19 +722,21 @@ curl -X POST "$BASE_URL/api/retrieval/search" \
 - 至少有 1 条结果命中 `VPN 证书失效处理 SOP`
 - `whyMatched` 不为空
 - `citationId` 不为空，因为 `saveCitations=true`
+- `sourceRef` 形如 `citation:<id>`
+- `diagnostics.returnedCount` 大于 0
 
 ### 10.7 创建工单并按工单检索
 
 如果你要验证 Thread 3 联动，先创建工单。
 
-先获取员工 token：
+先获取支持人员 token：
 
 ```bash
-EMPLOYEE_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
+SUPPORT_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
   -d "{
-    \"username\": \"$EMPLOYEE_USERNAME\",
-    \"password\": \"$EMPLOYEE_PASSWORD\"
+    \"username\": \"$SUPPORT_USERNAME\",
+    \"password\": \"$SUPPORT_PASSWORD\"
   }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
 ```
 
@@ -647,7 +744,7 @@ EMPLOYEE_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
 
 ```bash
 TICKET_RESPONSE=$(curl -s -X POST "$BASE_URL/api/tickets" \
-  -H "Authorization: Bearer $EMPLOYEE_TOKEN" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "title": "VPN 证书失效，无法连接",
@@ -670,10 +767,11 @@ echo "$TICKET_ID"
 
 ```bash
 curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $EMPLOYEE_TOKEN" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{
     \"ticketId\": $TICKET_ID,
+    \"ticketContext\": \"title: VPN 证书失效，无法连接; description: 今天在家连接公司 VPN 失败，客户端提示证书失效。\",
     \"limit\": 5,
     \"saveCitations\": true,
     \"aiRunId\": \"demo-run-ticket-001\"
@@ -692,6 +790,23 @@ curl -X POST "$BASE_URL/api/retrieval/search" \
 docker compose up -d postgres qdrant redis rabbitmq
 docker compose ps postgres qdrant redis rabbitmq
 ```
+
+若当前默认走本地 Ollama embedding，请先确认本地模型服务可用：
+
+```bash
+curl http://127.0.0.1:11434/api/tags
+curl -X POST http://127.0.0.1:11434/api/embeddings \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "nomic-embed-text:latest",
+    "prompt": "vpn certificate expired"
+  }'
+```
+
+预期：
+
+- 第一个命令能返回模型列表
+- 第二个命令能返回 `embedding` 数组
 
 确认 PostgreSQL 可登录：
 
@@ -717,6 +832,12 @@ APP_DB_USERNAME=ticketing \
 APP_DB_PASSWORD=ticketing \
 APP_QDRANT_HOST=127.0.0.1 \
 APP_QDRANT_HTTP_PORT=6333 \
+APP_KNOWLEDGE_EMBEDDING_ROUTING_MODE=local \
+APP_KNOWLEDGE_EMBEDDING_LOCAL_ENABLED=true \
+APP_KNOWLEDGE_EMBEDDING_LOCAL_MODEL=nomic-embed-text:latest \
+APP_KNOWLEDGE_EMBEDDING_LOCAL_BASE_URL=http://127.0.0.1:11434 \
+APP_KNOWLEDGE_EMBEDDING_LOCAL_EMBEDDING_PATH=/api/embeddings \
+APP_KNOWLEDGE_EMBEDDING_LOCAL_DIMENSION=768 \
 mvn clean spring-boot:run
 ```
 
@@ -795,21 +916,22 @@ curl http://localhost:6333/collections
 ### 11.5 验证直接检索
 
 ```bash
-EMPLOYEE_USERNAME='employee01'
-EMPLOYEE_PASSWORD='ChangeMe123!'
+SUPPORT_USERNAME='support01'
+SUPPORT_PASSWORD='ChangeMe123!'
 
-EMPLOYEE_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
+SUPPORT_TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
   -d "{
-    \"username\": \"$EMPLOYEE_USERNAME\",
-    \"password\": \"$EMPLOYEE_PASSWORD\"
+    \"username\": \"$SUPPORT_USERNAME\",
+    \"password\": \"$SUPPORT_PASSWORD\"
   }" | tr -d '\n' | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
 
 curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $EMPLOYEE_TOKEN" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "query": "VPN 证书失效 无法连接",
+    "ticketContext": "title: VPN 客户端提示证书失效; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired",
     "category": "VPN",
     "limit": 5,
     "saveCitations": true,
@@ -823,6 +945,8 @@ curl -X POST "$BASE_URL/api/retrieval/search" \
 - `results[0].title` 大概率为 `VPN 证书失效处理 SOP`
 - `results[*].metadata.category` 为 `VPN`
 - `citationId` 不为空
+- `sourceRef` 为 `citation:<id>`
+- `diagnostics.retrievalMode` 当前为 `VECTOR_WITH_METADATA_FILTERS`
 
 ### 11.6 验证 citations 落库
 
@@ -840,7 +964,7 @@ docker exec -it enterprise-ai-ticketing-postgres \
 
 ```bash
 TICKET_RESPONSE=$(curl -s -X POST "$BASE_URL/api/tickets" \
-  -H "Authorization: Bearer $EMPLOYEE_TOKEN" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "title": "VPN 客户端提示证书失效",
@@ -852,10 +976,11 @@ TICKET_RESPONSE=$(curl -s -X POST "$BASE_URL/api/tickets" \
 TICKET_ID=$(echo "$TICKET_RESPONSE" | tr -d '\n' | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
 
 curl -X POST "$BASE_URL/api/retrieval/search" \
-  -H "Authorization: Bearer $EMPLOYEE_TOKEN" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN" \
   -H 'Content-Type: application/json' \
   -d "{
     \"ticketId\": $TICKET_ID,
+    \"ticketContext\": \"title: VPN 客户端提示证书失效; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired\",
     \"limit\": 5,
     \"saveCitations\": true,
     \"aiRunId\": \"verify-ticket-search-001\"
@@ -875,10 +1000,17 @@ curl -X POST "$BASE_URL/api/retrieval/search" \
 验证思路：
 
 1. 先上传一份 `department=IT`、`accessLevel=INTERNAL` 的文档
-2. 用普通员工账号执行检索，确认能搜到
+2. 用 `support01` 或 `admin01` 检索，确认能搜到
 3. 再上传一份 `accessLevel=RESTRICTED` 的文档
 4. 用普通员工账号检索，预期搜不到
 5. 用 `support01` 或 `admin01` 检索，预期可搜到
+
+当前默认用户权限提醒：
+
+- `employee01` 部门是 `GENERAL`
+- `support01` 部门是 `IT`
+- 你上传 `department=IT` 的文档后，`employee01` 检索到空数组是正常行为，不是 citation 落库失败
+- 只有 `saveCitations=true` 且 `results` 非空时，`citations` 表才会新增记录
 
 如果你想新增一个受限文档，可先复制已有示例文件：
 
@@ -962,6 +1094,20 @@ docker compose ps qdrant
 curl http://localhost:6333/collections
 ```
 
+如果本地 embedding 服务未启动，先确认：
+
+```bash
+curl http://127.0.0.1:11434/api/tags
+```
+
+如果切换 embedding 模型后报 Qdrant vector size mismatch，说明 collection 仍然保留旧维度。处理方式：
+
+```bash
+curl -X DELETE http://127.0.0.1:6333/collections/knowledge_chunks
+```
+
+然后重新上传文档建立新索引。
+
 如果上传返回 403，检查是否使用了 `admin01` 登录。
 
 如果检索返回空数组，优先检查：
@@ -1016,6 +1162,8 @@ Thread 3 只需要提供稳定只读能力即可。
 ```json
 {
   "ticketId": 123,
+  "query": "VPN 证书失效 无法连接",
+  "ticketContext": "title: VPN 客户端提示证书失效; description: 今天在家连接公司 VPN 失败，客户端提示 certificate expired",
   "category": "VPN",
   "limit": 5,
   "saveCitations": true,
@@ -1026,8 +1174,10 @@ Thread 3 只需要提供稳定只读能力即可。
 说明：
 
 - `results` 可直接作为 AI 输入证据
-- `citationId` 可回填到 AI 运行记录或前端展示
+- `citationId` 与 `sourceRef` 可直接回填到 AI 运行记录或前端展示
 - 建议 Thread 5 不自行拼装权限过滤，而是直接复用本服务
+- 不建议 Thread 5 固定传 `department=requester.department`，否则会把支持人员本可读取的跨部门文档提前过滤掉
+- 当前 Thread 5 主链路已默认以 `saveCitations=true` 调用，便于 `sourceRef` 稳定返回 `citation:<id>`
 
 ### 方式 B：通过 Spring Service
 
@@ -1048,6 +1198,9 @@ private final RetrievalService retrievalService;
 - 不直接访问 `document_chunks` 拼返回
 - 不自行决定引用是否越权
 - 若要记录证据链，优先使用 `saveCitations=true`
+- 优先消费 `results[].retrievalScore`、`results[].rerankScore`、`results[].sourceRef`、`results[].metadataMap`
+- 同时消费 `diagnostics.retrievalMode`、`diagnostics.candidateCount`、`diagnostics.returnedCount`、`diagnostics.filterSummary`
+- 若 `results` 为空，不要直接判定系统故障，应结合 `diagnostics` 与 HTTP 状态区分“空命中”和“调用异常”
 
 ## 12.4 前端或其他模块
 
@@ -1069,7 +1222,7 @@ private final RetrievalService retrievalService;
 后续建议：
 
 1. 增加 citation 查询接口，供 ticket 详情直接读取
-2. 用真实 embedding 模型替换 hashing provider
+2. 在本地 Ollama / 商用 OpenAI 之外继续扩展更多 embedding provider
 3. 增加批量导入和重建索引能力
 4. 增加文档删除、重传、版本管理接口
 5. 增加针对检索准确率和权限过滤的集成测试

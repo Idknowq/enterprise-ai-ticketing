@@ -166,15 +166,15 @@ export default function ApprovalsPage() {
       <Alert
         type="info"
         showIcon
-        message="审批页面已切换到真实接口"
-        description="当前页面直接对接 /api/approvals/pending、/api/approvals/{id}/approve、/api/approvals/{id}/reject。管理员可查看全部待审批项，审批人只看分配给自己的待办。"
+        message="审批页面直接对接真实审批接口"
+        description="只有在 requiresApproval=true 且未触发人工接管、provider fallback、检索 ERROR/UNAVAILABLE 时，工单才会自动进入审批流。管理员可查看全部待审批项，审批人只看分配给自己的待办。"
       />
 
       <Card className="page-card" title="待审批列表">
         {pendingItems.length ? (
           <Table rowKey="approvalId" columns={columns} dataSource={pendingItems} pagination={false} />
         ) : (
-          <InlineEmpty description="当前没有待审批工单。请先在工单详情页运行 AI，且工单内容需命中需要审批的规则，例如权限申请、生产环境访问、只读日志权限等。" />
+          <InlineEmpty description="当前没有待审批工单。请回到工单详情页确认 AI 是否触发 AI_REVIEW_REQUIRED、是否使用 fallback，或检索状态是否为 ERROR / UNAVAILABLE。" />
         )}
       </Card>
 

@@ -48,6 +48,89 @@ function sortRuns(runs: AiWorkflowRunResponse[]) {
   );
 }
 
+function normalizeRetrievalStatus(status?: string | null) {
+  return status?.trim().toUpperCase() || "UNAVAILABLE";
+}
+
+function getAiAssessment(decision?: AiWorkflowRunResponse["finalDecision"] | null) {
+  if (!decision) {
+    return {
+      manualReviewRequired: false,
+      approvalFlowAllowed: false,
+      summary: "",
+      reasons: [] as string[],
+    };
+  }
+
+  const reasons: string[] = [];
+  const retrievalStatus = normalizeRetrievalStatus(decision.retrievalStatus);
+
+  if (decision.needsHumanHandoff) {
+    reasons.push("AI 明确要求人工接管");
+  }
+
+  if (decision.fallbackUsed) {
+    reasons.push(
+      decision.fallbackReason
+        ? `AI 运行已触发 provider fallback：${decision.fallbackReason}`
+        : "AI 运行已触发 provider fallback",
+    );
+  }
+
+  if (retrievalStatus === "ERROR" || retrievalStatus === "UNAVAILABLE") {
+    reasons.push(
+      decision.retrievalDiagnostics?.message
+        ? `检索状态为 ${retrievalStatus}：${decision.retrievalDiagnostics.message}`
+        : `检索状态为 ${retrievalStatus}`,
+    );
+  }
+
+  const manualReviewRequired = reasons.length > 0;
+  const approvalFlowAllowed = decision.requiresApproval && !manualReviewRequired;
+
+  let summary = "AI 建议已生成。";
+  if (manualReviewRequired) {
+    summary = "当前 AI 结果需要人工复核，后端不会自动进入审批流。";
+  } else if (approvalFlowAllowed) {
+    summary = "当前 AI 结果满足自动审批候选条件，可由后端自动发起审批流。";
+  } else if (decision.requiresApproval) {
+    summary = "AI 判断该工单需要审批，但当前不满足自动发起审批流条件。";
+  } else {
+    summary = "AI 判断当前工单无需审批。";
+  }
+
+  return { manualReviewRequired, approvalFlowAllowed, summary, reasons };
+}
+
+function getTimelineEventLabel(eventType: TicketDetailResponse["timeline"][number]["eventType"]) {
+  switch (eventType) {
+    case "CREATED":
+      return "工单创建";
+    case "STATUS_CHANGED":
+      return "状态变更";
+    case "COMMENT_ADDED":
+      return "评论新增";
+    case "ASSIGNED":
+      return "工单指派";
+    case "WORKFLOW_STARTED":
+      return "流程启动";
+    case "WORKFLOW_RESUMED":
+      return "流程恢复";
+    case "WORKFLOW_COMPLETED":
+      return "流程完成";
+    case "AI_REVIEW_REQUIRED":
+      return "AI 人工复核";
+    case "APPROVAL_REQUESTED":
+      return "审批发起";
+    case "APPROVAL_APPROVED":
+      return "审批通过";
+    case "APPROVAL_REJECTED":
+      return "审批驳回";
+    default:
+      return eventType;
+  }
+}
+
 export default function TicketDetailPage() {
   const { message } = App.useApp();
   const { user } = useAuth();
@@ -163,10 +246,15 @@ export default function TicketDetailPage() {
   }
 
   async function handleRetrieval() {
+    if (!detail) {
+      return;
+    }
+
     setRetrievalLoading(true);
     try {
       const result = await searchKnowledge({
         ticketId,
+        ticketContext: `${detail.ticket.title}\n${detail.ticket.description}`,
         limit: 5,
         saveCitations: false,
       });
@@ -193,6 +281,18 @@ export default function TicketDetailPage() {
 
   const latestRun = sortRuns(aiRuns)[0];
   const aiDecision = latestRun?.finalDecision || null;
+  const aiAssessment = getAiAssessment(aiDecision);
+  const retrievalStatus = normalizeRetrievalStatus(aiDecision?.retrievalStatus);
+  const hasAiReviewRequiredEvent = detail.timeline.some(
+    (event) => event.eventType === "AI_REVIEW_REQUIRED",
+  );
+  const approvalEmptyDescription = aiDecision
+    ? aiAssessment.manualReviewRequired || hasAiReviewRequiredEvent
+      ? "当前工单原本具备审批候选特征，但已被 AI review required 阻断。请先在 AI 建议页确认是否触发 fallback、人工接管或检索异常。"
+      : aiDecision.requiresApproval
+        ? "AI 已判断需要审批，但后端当前尚未生成审批记录，请先确认本次 AI 运行是否成功完成。"
+        : "当前工单不需要审批，因此不会生成审批记录。"
+    : "尚未生成 AI 结论，暂无审批记录。";
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
@@ -306,12 +406,19 @@ export default function TicketDetailPage() {
                   children: (
                     <Timeline
                       items={detail.timeline.map((event) => ({
-                        color: event.eventType.includes("REJECTED") ? "red" : "blue",
+                        color:
+                          event.eventType.includes("REJECTED")
+                            ? "red"
+                            : event.eventType === "AI_REVIEW_REQUIRED"
+                              ? "orange"
+                              : "blue",
                         children: (
                           <Space direction="vertical" size={2}>
                             <Space wrap>
                               <Typography.Text strong>{event.summary}</Typography.Text>
-                              <Typography.Text type="secondary">{event.eventType}</Typography.Text>
+                              <Typography.Text type="secondary">
+                                {getTimelineEventLabel(event.eventType)}
+                              </Typography.Text>
                             </Space>
                             <Typography.Text type="secondary">
                               {formatDateTime(event.createdAt)} · {event.operator?.displayName || "系统"}
@@ -330,8 +437,34 @@ export default function TicketDetailPage() {
                       {aiError ? <Alert type="warning" message={aiError} showIcon /> : null}
                       {aiDecision ? (
                         <>
+                          <Alert
+                            type={aiAssessment.manualReviewRequired ? "warning" : "info"}
+                            showIcon
+                            message={aiAssessment.summary}
+                            description={
+                              aiAssessment.reasons.length ? (
+                                <Space direction="vertical" size={4}>
+                                  {aiAssessment.reasons.map((reason) => (
+                                    <Typography.Text key={reason}>{reason}</Typography.Text>
+                                  ))}
+                                </Space>
+                              ) : undefined
+                            }
+                          />
                           <Descriptions bordered column={2}>
+                            <Descriptions.Item label="Schema Version">
+                              {aiDecision.schemaVersion || "-"}
+                            </Descriptions.Item>
                             <Descriptions.Item label="Workflow ID">{aiDecision.workflowId}</Descriptions.Item>
+                            <Descriptions.Item label="Provider">
+                              {aiDecision.providerType || "-"}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="模型">
+                              {aiDecision.modelName || "-"}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="分析模式">
+                              {aiDecision.analysisMode || "-"}
+                            </Descriptions.Item>
                             <Descriptions.Item label="生成时间">
                               {formatDateTime(aiDecision.generatedAt)}
                             </Descriptions.Item>
@@ -344,6 +477,18 @@ export default function TicketDetailPage() {
                             </Descriptions.Item>
                             <Descriptions.Item label="人工接管">
                               {aiDecision.needsHumanHandoff ? "需要人工接管" : "可继续自动建议"}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Fallback">
+                              {aiDecision.fallbackUsed ? "已触发" : "未触发"}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Fallback 原因">
+                              {aiDecision.fallbackReason || "-"}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="检索状态">
+                              {retrievalStatus}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="检索说明">
+                              {aiDecision.retrievalDiagnostics?.message || "-"}
                             </Descriptions.Item>
                           </Descriptions>
 
@@ -384,7 +529,16 @@ export default function TicketDetailPage() {
                               columns={[
                                 { title: "节点", dataIndex: "nodeName" },
                                 { title: "状态", dataIndex: "status" },
+                                { title: "Provider", dataIndex: "providerType" },
                                 { title: "模型", dataIndex: "modelName" },
+                                {
+                                  title: "Fallback",
+                                  render: (_, record) => (record.fallbackUsed ? "是" : "否"),
+                                },
+                                {
+                                  title: "检索状态",
+                                  render: (_, record) => record.retrievalStatus || "-",
+                                },
                                 { title: "耗时(ms)", dataIndex: "latencyMs" },
                                 { title: "摘要", dataIndex: "resultSummary" },
                               ]}
@@ -437,7 +591,7 @@ export default function TicketDetailPage() {
                       }))}
                     />
                   ) : (
-                    <InlineEmpty description="当前工单暂无审批记录" />
+                    <InlineEmpty description={approvalEmptyDescription} />
                   ),
                 },
                 {
@@ -486,6 +640,17 @@ export default function TicketDetailPage() {
                                   <Space wrap>
                                     <Typography.Text strong>{item.title}</Typography.Text>
                                     <Typography.Text type="secondary">{item.sourceType}</Typography.Text>
+                                    {item.retrievalScore !== null &&
+                                    item.retrievalScore !== undefined ? (
+                                      <Typography.Text type="secondary">
+                                        retrieval {item.retrievalScore.toFixed(2)}
+                                      </Typography.Text>
+                                    ) : null}
+                                    {item.rerankScore !== null && item.rerankScore !== undefined ? (
+                                      <Typography.Text type="secondary">
+                                        rerank {item.rerankScore.toFixed(2)}
+                                      </Typography.Text>
+                                    ) : null}
                                   </Space>
                                 }
                                 description={
@@ -494,6 +659,11 @@ export default function TicketDetailPage() {
                                     <Typography.Text type="secondary">
                                       {item.sourceRef || `document:${item.documentId ?? "-"}`}
                                     </Typography.Text>
+                                    {item.metadata ? (
+                                      <Typography.Text type="secondary">
+                                        metadata {JSON.stringify(item.metadata)}
+                                      </Typography.Text>
+                                    ) : null}
                                   </Space>
                                 }
                               />
@@ -532,7 +702,7 @@ export default function TicketDetailPage() {
                 <Alert
                   type="warning"
                   showIcon
-                  message="当前工单处于待审批状态，可跳转审批中心查看 adapter 列表与审批动作。"
+                  message="当前工单处于待审批状态，可跳转审批中心处理真实审批任务。"
                 />
               ) : null}
 
@@ -603,7 +773,24 @@ export default function TicketDetailPage() {
                   <Descriptions.Item label="人工接管">
                     {aiDecision.needsHumanHandoff ? "是" : "否"}
                   </Descriptions.Item>
+                  <Descriptions.Item label="Provider / 模型">
+                    {[aiDecision.providerType, aiDecision.modelName].filter(Boolean).join(" / ") || "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="分析模式">
+                    {aiDecision.analysisMode || "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Fallback">
+                    {aiDecision.fallbackUsed ? "已触发" : "未触发"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="检索状态">
+                    {retrievalStatus}
+                  </Descriptions.Item>
                 </Descriptions>
+                <Alert
+                  type={aiAssessment.manualReviewRequired ? "warning" : "info"}
+                  showIcon
+                  message={aiAssessment.summary}
+                />
                 <Button icon={<RobotOutlined />} loading={aiLoading} onClick={handleRunAi} block>
                   重新运行 AI
                 </Button>
