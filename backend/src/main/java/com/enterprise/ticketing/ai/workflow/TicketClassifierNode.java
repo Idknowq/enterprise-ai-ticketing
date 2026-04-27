@@ -29,12 +29,13 @@ public class TicketClassifierNode {
                     new AiClassificationInput(
                             state.getTicket().title(),
                             state.getTicket().description(),
-                            canonicalCategory.code()
+                            canonicalCategory.code(),
+                            state.getTicket().priority()
                     )
             );
             AiClassificationOutput canonicalOutput = new AiClassificationOutput(
                     canonicalCategory.code(),
-                    response.output().priority(),
+                    state.getTicket().priority(),
                     response.output().confidence()
             );
             state.setClassification(canonicalOutput);

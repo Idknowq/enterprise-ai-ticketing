@@ -31,30 +31,23 @@ public class RuleBasedStructuredLlmProvider implements StructuredLlmProvider {
     public StructuredLlmResponse<AiClassificationOutput> classify(AiClassificationInput input) {
         String text = normalize(input.title()) + " " + normalize(input.description());
         String category = resolveCanonicalCategory(input.existingCategory()).code();
-        TicketPriority priority;
         double confidence;
         if (containsAny(text, "vpn", "证书", "certificate", "remote access")) {
-            priority = TicketPriority.MEDIUM;
             confidence = 0.58d;
         } else if (containsAny(text, "password", "reset password", "forgot password", "密码")) {
-            priority = TicketPriority.MEDIUM;
             confidence = 0.56d;
         } else if (containsAny(text, "permission", "access", "权限", "只读", "read only", "生产环境", "prod")) {
-            priority = containsAny(text, "prod", "production", "线上", "紧急") ? TicketPriority.HIGH : TicketPriority.MEDIUM;
             confidence = 0.6d;
         } else if (containsAny(text, "license", "授权", "office", "outlook", "teams")) {
-            priority = TicketPriority.MEDIUM;
             confidence = 0.46d;
         } else if (containsAny(text, "laptop", "device", "设备", "电脑", "hardware")) {
-            priority = TicketPriority.MEDIUM;
             confidence = 0.44d;
         } else if (containsAny(text, "develop", "build", "deploy", "开发环境", "jenkins", "ide")) {
-            priority = TicketPriority.HIGH;
             confidence = 0.42d;
         } else {
-            priority = TicketPriority.MEDIUM;
             confidence = 0.18d;
         }
+        TicketPriority priority = input.existingPriority() == null ? TicketPriority.MEDIUM : input.existingPriority();
         AiClassificationOutput output = new AiClassificationOutput(category, priority, confidence);
         return new StructuredLlmResponse<>(output, providerType(), defaultModelName(), estimateTokens(text), 32, false, null);
     }

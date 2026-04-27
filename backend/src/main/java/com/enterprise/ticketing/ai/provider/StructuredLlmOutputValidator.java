@@ -12,9 +12,6 @@ public class StructuredLlmOutputValidator {
         if (output == null) {
             throw new IllegalStateException("classification output is missing");
         }
-        if (output.priority() == null) {
-            throw new IllegalStateException("classification priority is required");
-        }
         if (Double.isNaN(output.confidence()) || output.confidence() < 0d || output.confidence() > 1d) {
             throw new IllegalStateException("classification confidence must be between 0 and 1");
         }

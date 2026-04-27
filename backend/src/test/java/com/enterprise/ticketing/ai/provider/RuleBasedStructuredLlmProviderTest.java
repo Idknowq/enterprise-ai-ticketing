@@ -17,13 +17,14 @@ class RuleBasedStructuredLlmProviderTest {
                 new AiClassificationInput(
                         "VPN 连接失败",
                         "我在家连接公司 VPN 失败，客户端提示证书失效。",
-                        "REMOTE_ACCESS"
+                        "REMOTE_ACCESS",
+                        TicketPriority.LOW
                 )
         );
 
         assertThat(response.output().category()).isEqualTo("REMOTE_ACCESS");
         assertThat(response.providerType()).isEqualTo("rule-based");
-        assertThat(response.output().priority()).isEqualTo(TicketPriority.MEDIUM);
+        assertThat(response.output().priority()).isEqualTo(TicketPriority.LOW);
         assertThat(response.output().confidence()).isBetween(0.4d, 0.7d);
     }
 

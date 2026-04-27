@@ -33,12 +33,13 @@ class LlmProviderRouterTest {
         );
 
         StructuredLlmResponse<AiClassificationOutput> response = router.classify(
-                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", "REMOTE_ACCESS")
+                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", "REMOTE_ACCESS", TicketPriority.LOW)
         );
 
         assertThat(response.providerType()).isEqualTo("rule-based");
         assertThat(response.modelName()).isEqualTo("mvp-rule-based");
         assertThat(response.output().category()).isEqualTo("REMOTE_ACCESS");
+        assertThat(response.output().priority()).isEqualTo(TicketPriority.LOW);
         assertThat(response.fallbackUsed()).isTrue();
         assertThat(response.fallbackReason()).contains("deepseek timeout");
     }
@@ -71,7 +72,7 @@ class LlmProviderRouterTest {
         );
 
         StructuredLlmResponse<AiClassificationOutput> response = router.classify(
-                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", "REMOTE_ACCESS")
+                new AiClassificationInput("VPN 连接失败", "客户端提示证书失效", "REMOTE_ACCESS", TicketPriority.LOW)
         );
 
         assertThat(response.providerType()).isEqualTo("local-llm");

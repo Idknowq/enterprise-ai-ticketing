@@ -35,7 +35,7 @@
 当前主链路由 `AiOrchestrationService.runForTicket(ticketId)` 驱动，按以下顺序执行：
 
 1. 读取工单详情
-2. 校验工单标准 `category`，分类节点只输出 `priority / confidence`
+2. 校验工单标准 `category / priority`，分类节点只输出 `confidence`
 3. 字段抽取节点输出 `extractedFields`
 4. 检索节点调用 `RetrievalService`
 5. 处理建议节点基于 citations 和 extracted fields 输出审批判断、人工接管判断、草稿回复和建议动作
@@ -54,14 +54,14 @@
 职责：
 
 - 校验并沿用 Ticket Core 提供的标准 `category`
-- 输出工单优先级
+- 校验并沿用 Ticket Core 提供的 `priority`
 - 输出置信度
-- 不允许 LLM、local model 或 rule-based 改写 category
+- 不允许 LLM、local model 或 rule-based 改写 category 或 priority
 
 输出字段：
 
 - `category`：来自 `ticket.category` 的标准 code
-- `priority`
+- `priority`：来自 `ticket.priority`
 - `confidence`
 
 实现位置：
@@ -280,7 +280,7 @@ migration 文件：
 当前路由策略：
 
 - `Classifier / Extractor / Resolution` 优先调用 DeepSeek
-- `Classifier` 的 category 不由模型决定，模型返回的 category 会被标准 `ticket.category` 覆盖
+- `Classifier` 的 category / priority 不由模型决定，模型返回值会被 `ticket.category / ticket.priority` 覆盖
 - 若本地模型已启用，则在 DeepSeek 失败后优先切到 `LocalStructuredLlmProvider`
 - 模型返回非法 JSON 或缺字段时会执行有限重试
 - 远端和本地模型都失败时才会回退到 `rule-based`
@@ -397,7 +397,7 @@ Authorization: Bearer <token>
 可以使用的结果字段：
 
 - `category`：标准 category code，直接来自 Ticket Core
-- `priority`
+- `priority`：直接来自 Ticket Core
 - `analysisMode`
 - `requiresApproval`
 - `needsHumanHandoff`

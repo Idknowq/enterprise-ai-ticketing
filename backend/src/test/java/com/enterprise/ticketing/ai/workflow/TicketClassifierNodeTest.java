@@ -33,12 +33,12 @@ class TicketClassifierNodeTest {
                 null
         ));
         TicketClassifierNode node = new TicketClassifierNode(router, mock(AiRunLogService.class));
-        AiWorkflowState state = workflowState("REMOTE_ACCESS");
+        AiWorkflowState state = workflowState("REMOTE_ACCESS", TicketPriority.LOW);
 
         node.execute(state);
 
         assertThat(state.getClassification().category()).isEqualTo("REMOTE_ACCESS");
-        assertThat(state.getClassification().priority()).isEqualTo(TicketPriority.HIGH);
+        assertThat(state.getClassification().priority()).isEqualTo(TicketPriority.LOW);
         assertThat(state.getClassification().confidence()).isEqualTo(0.77d);
     }
 
@@ -49,12 +49,12 @@ class TicketClassifierNodeTest {
         when(router.defaultModelName()).thenReturn("deepseek-chat");
         TicketClassifierNode node = new TicketClassifierNode(router, mock(AiRunLogService.class));
 
-        assertThatThrownBy(() -> node.execute(workflowState("VPN_ISSUE")))
+        assertThatThrownBy(() -> node.execute(workflowState("VPN_ISSUE", TicketPriority.MEDIUM)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unsupported knowledge document category");
     }
 
-    private AiWorkflowState workflowState(String category) {
+    private AiWorkflowState workflowState(String category, TicketPriority priority) {
         return new AiWorkflowState(
                 "ai-test",
                 new TicketResponse(
@@ -62,7 +62,7 @@ class TicketClassifierNodeTest {
                         "VPN 连接失败",
                         "客户端提示证书失效",
                         category,
-                        TicketPriority.MEDIUM,
+                        priority,
                         TicketStatus.OPEN,
                         new TicketUserSummaryResponse(1L, "support01", "Support", "IT"),
                         null,
