@@ -322,7 +322,7 @@ export default function TicketDetailPage() {
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
       <Card className="page-card">
-        <Space style={{ width: "100%", justifyContent: "space-between" }} align="start">
+        <Space style={{ width: "100%" }} align="start">
           <Space direction="vertical" size={6}>
             <Link href="/tickets">
               <Button icon={<ArrowLeftOutlined />} type="link">
@@ -340,19 +340,6 @@ export default function TicketDetailPage() {
             <Typography.Paragraph style={{ marginBottom: 0 }}>
               {detail.ticket.description}
             </Typography.Paragraph>
-          </Space>
-          <Space>
-            <Button icon={<SearchOutlined />} loading={retrievalLoading} onClick={handleRetrieval}>
-              证据检索
-            </Button>
-            <Button
-              type="primary"
-              icon={<RobotOutlined />}
-              loading={aiLoading}
-              onClick={handleRunAi}
-            >
-              运行 AI 分析
-            </Button>
           </Space>
         </Space>
       </Card>
@@ -578,8 +565,13 @@ export default function TicketDetailPage() {
                         <InlineEmpty
                           description="暂无 AI 运行记录"
                           action={
-                            <Button type="primary" icon={<RobotOutlined />} onClick={handleRunAi}>
-                              立即运行 AI
+                            <Button
+                              type="primary"
+                              icon={<RobotOutlined />}
+                              loading={aiLoading}
+                              onClick={handleRunAi}
+                            >
+                              {aiLoading ? "正在分析" : "立即运行 AI"}
                             </Button>
                           }
                         />
@@ -831,8 +823,13 @@ export default function TicketDetailPage() {
               <InlineEmpty
                 description="尚未生成 AI 建议"
                 action={
-                  <Button type="primary" icon={<RobotOutlined />} onClick={handleRunAi}>
-                    开始分析
+                  <Button
+                    type="primary"
+                    icon={<RobotOutlined />}
+                    loading={aiLoading}
+                    onClick={handleRunAi}
+                  >
+                    {aiLoading ? "正在分析" : "开始分析"}
                   </Button>
                 }
               />
